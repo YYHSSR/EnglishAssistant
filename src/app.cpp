@@ -39,11 +39,12 @@ std::atomic<bool> reload_personal{false};
 bool committing=false;
 bool swallowed_mouse=false;
 bool ctrl_held=false,swallowed[256]{};
-int scale_dpi=96,hover=-1,page=0,page_capacity=page_size;
+int scale_dpi=96,hover=-1,page=0,page_capacity=page_size,target_window_width=0;
 struct Hit { RECT rect;int number,sense; };
 std::vector<Hit> hits;
 Snapshot shown;
 std::vector<EnglishOption> displayed_options;
+FlowLayout displayed_flow;
 Dictionary dictionary;
 std::thread worker;
 std::mutex mutex;
@@ -183,7 +184,9 @@ LRESULT CALLBACK mouse(int code,WPARAM w,LPARAM l){
         // outside click that could dismiss/commit its Chinese composition.
         swallowed_mouse=true;PostMessageW(main_window,CHOOSE,hit.number,hit.sense);return 1;
     }
-    invalidate();return CallNextHookEx(mouse_hook,code,w,l);
+    // Empty space and Chinese group labels belong to our panel too. Consume
+    // their clicks without selecting, so the IME cannot commit Chinese text.
+    swallowed_mouse=true;return 1;
 }
 void CALLBACK foreground_event(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD){invalidate();}
 void CALLBACK visibility_event(HWINEVENTHOOK,DWORD,HWND h,LONG,LONG,DWORD,DWORD){
@@ -197,7 +200,11 @@ void fonts(){
     small_font=CreateFontW(-px(11),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");
 }
 int page_count(){return std::max(1,((int)displayed_options.size()+page_capacity-1)/page_capacity);}
-int visible_rows(){return std::max(0,std::min(page_capacity,(int)displayed_options.size()-page*page_capacity));}
+std::vector<int> measure_options(){
+    HDC dc=GetDC(popup);auto old=SelectObject(dc,normal_font);std::vector<int> widths;
+    for(const auto&o:displayed_options){SIZE size{};GetTextExtentPoint32W(dc,o.text.c_str(),(int)o.text.size(),&size);widths.push_back(size.cx);}
+    SelectObject(dc,old);ReleaseDC(popup,dc);return widths;
+}
 std::wstring footer(){
     int missing=0;for(const auto&c:shown.candidates)if(c.senses.empty())++missing;
     std::wstring text;
@@ -212,9 +219,12 @@ void position_popup(){
     UINT dpi=96,dpi_y=96;GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&dpi,&dpi_y);
     if(scale_dpi!=(int)dpi){scale_dpi=(int)dpi;fonts();}
     bool missing=false;for(const auto&c:shown.candidates)if(c.senses.empty())missing=true;
-    auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,(int)displayed_options.size(),page,missing);
+    RECT target_bounds{};GetWindowRect(shown.foreground,&target_bounds);
+    target_window_width=(int)(target_bounds.right-target_bounds.left);
+    auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,displayed_options,measure_options(),page,missing,target_window_width);
     if(!layout.capacity){ShowWindow(popup,SW_HIDE);hits.clear();return;}
     page_capacity=layout.capacity;page=layout.page;
+    displayed_flow=std::move(layout.flow);
     const auto&r=layout.bounds;
     SetWindowPos(popup,HWND_TOPMOST,r.left,r.top,r.right-r.left,r.bottom-r.top,SWP_NOACTIVATE|SWP_SHOWWINDOW);
     InvalidateRect(popup,nullptr,FALSE);
@@ -234,18 +244,21 @@ void render(HDC dc,RECT client){
     RECT title{px(42),px(8),client.right-px(12),px(35)};
     draw_text(mem,L"英文  ·  Ctrl + 数字 / 方向键，松开输出",title,RGB(85,92,112),small_font);
     hits.clear();
-    for(int row=0;row<visible_rows();row++){
-        const auto&o=displayed_options[page*page_capacity+row];int top=px(42+row*50);
-        RECT card{px(10),top,client.right-px(10),top+px(46)};
+    for(const auto&group:displayed_flow.groups){
+        rounded(mem,group.bounds,RGB(255,255,255));
+        RECT chinese{group.bounds.left+px(10),group.bounds.top+px(2),group.bounds.right-px(10),group.bounds.top+px(22)};
+        draw_text(mem,group.word,chinese,RGB(139,145,162),small_font);
+    }
+    for(size_t cell=0;cell<displayed_flow.cells.size();++cell){
+        const auto&placement=displayed_flow.cells[cell];const auto&o=displayed_options[placement.index];
+        const auto&card=placement.bounds;
         bool selected=pending_selection&&pending_selection->number==o.candidate&&pending_selection->sense==o.sense;
-        rounded(mem,card,selected?RGB(221,227,254):(hover==row?RGB(237,240,255):RGB(255,255,255)));
+        rounded(mem,card,selected?RGB(221,227,254):(hover==(int)cell?RGB(237,240,255):RGB(255,255,255)));
         hits.push_back({card,o.candidate,o.sense});
-        RECT badge{px(18),top+px(9),px(46),top+px(37)};rounded(mem,badge,selected?RGB(77,87,210):RGB(237,239,252));
-        RECT num=badge;num.left+=px(9);draw_text(mem,std::to_wstring(row+1),num,selected?RGB(255,255,255):RGB(82,89,186),normal_font);
-        RECT english{px(58),top+px(2),client.right-px(20),top+px(28)};
+        RECT badge{card.left+px(3),card.top+px(4),card.left+px(25),card.bottom-px(4)};rounded(mem,badge,selected?RGB(77,87,210):RGB(237,239,252));
+        RECT num=badge;num.left+=px(6);draw_text(mem,std::to_wstring(placement.index-page*page_capacity+1),num,selected?RGB(255,255,255):RGB(82,89,186),small_font);
+        RECT english{card.left+px(31),card.top,card.right-px(6),card.bottom};
         draw_text(mem,o.text,english,RGB(46,55,123),normal_font);
-        RECT chinese{px(58),top+px(27),client.right-px(20),top+px(44)};
-        draw_text(mem,o.word,chinese,RGB(139,145,162),small_font);
     }
     RECT foot{px(16),client.bottom-px(26),client.right-px(12),client.bottom-px(4)};
     draw_text(mem,footer(),foot,RGB(121,130,151),small_font);
@@ -254,11 +267,12 @@ void render(HDC dc,RECT client){
     SelectObject(mem,old);DeleteObject(bmp);DeleteDC(mem);
 }
 void paint(HWND h){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);RECT client;GetClientRect(h,&client);render(dc,client);EndPaint(h,&ps);}
-bool render_preview(const std::wstring& path){
+bool render_preview(const std::wstring& path,int width){
     // Render sample content into a bitmap without opening a window or installing hooks.
     shown.candidates={{1,L"发展",true,dictionary.lookup(L"发展")},{2,L"罚站",false,dictionary.lookup(L"罚站")},{5,L"发",false,dictionary.lookup(L"发")},{6,L"法",false,dictionary.lookup(L"法")},{7,L"伐",false,dictionary.lookup(L"伐")}};
     displayed_options=english_options(shown);pending_selection=Choice{shown,1,1};
-    RECT client{0,0,420,42+50*visible_rows()+8};
+    displayed_flow=grouped_flow(displayed_options,measure_options(),0,page_capacity,width,scale_dpi);
+    RECT client{0,0,width,displayed_flow.height+8};
     HDC screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=client.right;info.bmiHeader.biHeight=client.bottom;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
     void* bits=nullptr;HBITMAP bitmap=CreateDIBSection(screen,&info,DIB_RGB_COLORS,&bits,nullptr,0);
     if(!bitmap){DeleteDC(dc);ReleaseDC(nullptr,screen);return false;}
@@ -317,7 +331,9 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         bool changed=!visual_equal(shown,s);shown=std::move(s);
         if(changed){displayed_options=english_options(shown);hover=-1;}
         if(diagnostics && changed){diagnostics<<"snapshot epoch="<<shown.epoch<<" foreground="<<shown.foreground<<" bounds="<<shown.bounds.left<<","<<shown.bounds.top<<","<<shown.bounds.right<<","<<shown.bounds.bottom<<"\n";for(const auto&c:shown.candidates){diagnostics<<c.number<<"\t"<<utf8(c.word);for(const auto&v:c.senses)diagnostics<<"\t"<<utf8(v);diagnostics<<"\n";}diagnostics.flush();}
-        if(changed||!shown.valid())position_popup();else InvalidateRect(popup,nullptr,FALSE);
+        RECT target_bounds{};if(shown.valid())GetWindowRect(shown.foreground,&target_bounds);
+        bool resized=(int)(target_bounds.right-target_bounds.left)!=target_window_width;
+        if(changed||!shown.valid()||resized)position_popup();else InvalidateRect(popup,nullptr,FALSE);
         return 0;
     }
     if(m==INVALIDATE){shown={};pending_selection.reset();page=0;ShowWindow(popup,SW_HIDE);hits.clear();return 0;}
@@ -382,7 +398,9 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     if(GetLastError()==ERROR_ALREADY_EXISTS){if(requested_document){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,DOCUMENT,requested_document==2,0);}else MessageBoxW(nullptr,L"EnglishAssistant 已经运行。请在任务栏托盘找到沃雅妮莎头像。",L"EnglishAssistant",MB_OK|MB_ICONINFORMATION);LocalFree(args);CloseHandle(singleton);return 0;}
     wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);folder=std::filesystem::path(path).parent_path().wstring();config_path=folder+L"\\settings.ini";
     std::wstring preview_path;
+    int preview_width=560;
     for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--render-preview")==0)preview_path=args[a+1];
+    for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--preview-width")==0)preview_width=std::clamp(_wtoi(args[a+1]),240,560);
     for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--diagnostic")==0)diagnostics.open(std::filesystem::path(args[a+1]),std::ios::trunc);
     LocalFree(args);
     if(!dictionary.open(folder+L"\\data\\glossary-en.tsv")){MessageBoxW(nullptr,L"无法读取 data\\glossary-en.tsv。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
@@ -394,7 +412,7 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     online=std::make_unique<OnlineTranslator>(folder+L"\\state\\network-state.ini",notify_worker);
     online->set_enabled(GetPrivateProfileIntW(L"network",L"enabled",0,config_path.c_str())!=0);
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");fonts();tray_icon=make_icon();
-    if(!preview_path.empty()){bool ok=render_preview(preview_path);online.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
+    if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);online.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
     WNDCLASSW cls{};cls.lpfnWndProc=main_proc;cls.hInstance=i;cls.hIcon=tray_icon;cls.lpszClassName=L"EnglishAssistant.Tray";RegisterClassW(&cls);
     main_window=CreateWindowExW(WS_EX_TOOLWINDOW,cls.lpszClassName,L"EnglishAssistant",WS_POPUP,0,0,0,0,nullptr,nullptr,i,nullptr);
     cls.lpfnWndProc=popup_proc;cls.lpszClassName=L"EnglishAssistant.Popup";cls.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClassW(&cls);

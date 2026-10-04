@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(EnglishAssistant VERSION 0.4.0 LANGUAGES CXX RC)
+project(EnglishAssistant VERSION 0.5.0 LANGUAGES CXX RC)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(assistant_core src/dictionary.cpp src/candidates.cpp src/options.cpp src/layout.cpp src/online.cpp src/documents.cpp)
