@@ -6,6 +6,8 @@
 #include "startup.hpp"
 #include "translation_box.hpp"
 #include "documents.hpp"
+#include "background.hpp"
+#include <gdiplus.h>
 #include <shellapi.h>
 #include <windowsx.h>
 #include <dwmapi.h>
@@ -35,6 +37,7 @@ UINT taskbar_created=0;
 HFONT normal_font=nullptr,small_font=nullptr;
 HICON tray_icon=nullptr;
 std::wstring folder,config_path,executable_path;
+std::unique_ptr<Background> candidate_background;
 std::atomic<uint64_t> epoch{1},wake_version{0};
 std::atomic<bool> paused{false},stopping{false};
 std::atomic<bool> reload_personal{false};
@@ -237,13 +240,15 @@ void draw_text(HDC dc,const std::wstring& text,RECT r,COLORREF color,HFONT font)
     SelectObject(dc,font);SetTextColor(dc,color);SetBkMode(dc,TRANSPARENT);
     DrawTextW(dc,text.c_str(),(int)text.size(),&r,DT_LEFT|DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS|DT_NOPREFIX);
 }
-void rounded(HDC dc,RECT r,COLORREF fill){
-    auto brush=CreateSolidBrush(fill);auto oldBrush=SelectObject(dc,brush);auto oldPen=SelectObject(dc,GetStockObject(NULL_PEN));
-    RoundRect(dc,r.left,r.top,r.right,r.bottom,px(10),px(10));SelectObject(dc,oldBrush);SelectObject(dc,oldPen);DeleteObject(brush);
+void rounded(HDC dc,RECT r,COLORREF fill,BYTE opacity=218){
+    Gdiplus::Graphics graphics(dc);graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);Gdiplus::GraphicsPath path;float d=float(px(10));
+    path.AddArc(float(r.left),float(r.top),d,d,180,90);path.AddArc(r.right-d,float(r.top),d,d,270,90);path.AddArc(r.right-d,r.bottom-d,d,d,0,90);path.AddArc(float(r.left),r.bottom-d,d,d,90,90);path.CloseFigure();
+    Gdiplus::SolidBrush brush(Gdiplus::Color(opacity,GetRValue(fill),GetGValue(fill),GetBValue(fill)));graphics.FillPath(&brush,&path);
 }
 void render(HDC dc,RECT client){
     HDC mem=CreateCompatibleDC(dc);HBITMAP bmp=CreateCompatibleBitmap(dc,client.right,client.bottom);auto old=SelectObject(mem,bmp);
     HBRUSH bg=CreateSolidBrush(RGB(249,250,254));FillRect(mem,&client,bg);DeleteObject(bg);
+    if(candidate_background)candidate_background->paint(mem,client);
     DrawIconEx(mem,px(14),px(12),tray_icon,px(20),px(20),0,nullptr,DI_NORMAL);
     RECT title{px(42),px(8),client.right-px(12),px(35)};
     draw_text(mem,L"英文  ·  Ctrl + 数字 / 方向键，松开输出",title,RGB(85,92,112),small_font);
@@ -257,7 +262,7 @@ void render(HDC dc,RECT client){
         const auto&placement=displayed_flow.cells[cell];const auto&o=displayed_options[placement.index];
         const auto&card=placement.bounds;
         bool selected=pending_selection&&pending_selection->number==o.candidate&&pending_selection->sense==o.sense;
-        rounded(mem,card,selected?RGB(221,227,254):(hover==(int)cell?RGB(237,240,255):RGB(255,255,255)));
+        rounded(mem,card,selected?RGB(221,227,254):(hover==(int)cell?RGB(237,240,255):RGB(255,255,255)),selected?245:115);
         hits.push_back({card,o.candidate,o.sense});
         RECT badge{card.left+px(3),card.top+px(4),card.left+px(25),card.bottom-px(4)};rounded(mem,badge,selected?RGB(77,87,210):RGB(237,239,252));
         RECT num=badge;num.left+=px(6);draw_text(mem,std::to_wstring(placement.index-page*page_capacity+1),num,selected?RGB(255,255,255):RGB(82,89,186),small_font);
@@ -290,6 +295,8 @@ bool render_preview(const std::wstring& path,int width){
     SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);return ok;
 }
 LRESULT CALLBACK popup_proc(HWND h,UINT m,WPARAM w,LPARAM l){
+    if(m==WM_SHOWWINDOW){if(candidate_background)candidate_background->visible(w!=0);if(w&&candidate_background&&candidate_background->animated())SetTimer(h,1,67,nullptr);else KillTimer(h,1);}
+    if(m==WM_TIMER){InvalidateRect(h,nullptr,FALSE);return 0;}
     if(m==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
     if(m==WM_PAINT){paint(h);return 0;}
     if(m==WM_ERASEBKGND)return 1;
@@ -308,16 +315,13 @@ void menu(){
     AppendMenuW(menu,MF_STRING|(startup_enabled(executable_path)?MF_CHECKED:0),10,L"开机自启动");
     AppendMenuW(menu,MF_STRING,11,L"英文 → 中文翻译框");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(menu,MF_STRING,4,L"编辑个人词表");AppendMenuW(menu,MF_STRING,5,L"重新加载个人词表");
-    AppendMenuW(menu,MF_STRING,7,L"使用说明");
+    AppendMenuW(menu,MF_STRING,12,L"翻译框背景…");AppendMenuW(menu,MF_STRING,13,L"英文选词框背景…");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,8,L"退出");
     POINT p;GetCursorPos(&p);SetForegroundWindow(main_window);int cmd=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY|TPM_RIGHTBUTTON,p.x,p.y,0,main_window,nullptr);DestroyMenu(menu);PostMessageW(main_window,WM_NULL,0,0);
     if(cmd==1){paused=!paused;tray(false);notify_worker();}
     if(cmd==10){bool enable=!startup_enabled(executable_path);if(set_startup(executable_path,enable))WritePrivateProfileStringW(L"startup",L"enabled",enable?L"1":L"0",config_path.c_str());else balloon(L"无法修改当前用户的开机自启动设置。");}
-    if(cmd==11)show_translation_box(instance,main_window,current_dictionary);
-    if(cmd==4)document(true);
-    if(cmd==5){reload_personal=true;notify_worker();}
-    if(cmd==7)document(false);
+    if(cmd==11)show_translation_box(instance,main_window,current_dictionary,folder);
+    if(cmd==12||cmd==13)show_background_settings(instance,main_window,folder,cmd==12?BackgroundKind::Translation:BackgroundKind::Candidates);
     if(cmd==8)DestroyWindow(main_window);
 }
 bool visual_equal(const Snapshot&a,const Snapshot&b){
@@ -327,7 +331,8 @@ bool visual_equal(const Snapshot&a,const Snapshot&b){
     return true;
 }
 LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
-    if(m==DOCUMENT){if(w==2)show_translation_box(instance,main_window,current_dictionary);else document(w!=0);return 0;}
+    if(m==DOCUMENT){if(w==2)show_translation_box(instance,main_window,current_dictionary,folder);else document(w!=0);return 0;}
+    if(m==background_changed){if((BackgroundKind)w==BackgroundKind::Translation)reload_translation_background();else{candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));candidate_background->visible(IsWindowVisible(popup));InvalidateRect(popup,nullptr,FALSE);}return 0;}
     if(m==taskbar_created && taskbar_created){tray(true);return 0;}
     if(m==UPDATE){Snapshot s;{std::lock_guard<std::mutex> lock(mutex);s=latest;}
         if(s.valid() && (s.epoch!=epoch.load()||paused||committing||!same_target(s)))s={};
@@ -384,6 +389,7 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_QUERYENDSESSION)return TRUE;
     if(m==WM_ENDSESSION&&w){DestroyWindow(h);return 0;}
     if(m==WM_DESTROY){
+        close_background_settings();
         close_translation_box();
         stopping=true;wake.notify_one();
         if(key_hook)UnhookWindowsHookEx(key_hook);
@@ -396,6 +402,7 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
 }
 }
 int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
+    struct Apartment {HRESULT result=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~Apartment(){if(SUCCEEDED(result))CoUninitialize();}} apartment;
     instance=i;SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     int argc=0;auto args=CommandLineToArgvW(GetCommandLineW(),&argc);
     for(int a=1;a<argc;a++)if(wcscmp(args[a],L"--quit")==0){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,WM_CLOSE,0,0);LocalFree(args);return 0;}
@@ -414,14 +421,15 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     dictionary=std::make_shared<OfflineTranslator>();
     if(!dictionary->open(folder)){MessageBoxW(nullptr,L"无法读取 data 中的中英、英中词库。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");fonts();tray_icon=make_icon();
-    if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
+    candidate_background=std::make_unique<Background>();candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));
+    if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);candidate_background.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
     if(GetPrivateProfileIntW(L"startup",L"enabled",0,config_path.c_str())!=0)set_startup(executable_path,true);
     WritePrivateProfileStringW(L"network",nullptr,nullptr,config_path.c_str());
     WNDCLASSW cls{};cls.lpfnWndProc=main_proc;cls.hInstance=i;cls.hIcon=tray_icon;cls.lpszClassName=L"EnglishAssistant.Tray";RegisterClassW(&cls);
     main_window=CreateWindowExW(WS_EX_TOOLWINDOW,cls.lpszClassName,L"EnglishAssistant",WS_POPUP,0,0,0,0,nullptr,nullptr,i,nullptr);
     cls.lpfnWndProc=popup_proc;cls.lpszClassName=L"EnglishAssistant.Popup";cls.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClassW(&cls);
     popup=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,cls.lpszClassName,L"英文候选",WS_POPUP,0,0,0,0,main_window,nullptr,i,nullptr);
-    if(!main_window||!popup){CloseHandle(singleton);return 1;}
+    if(!main_window||!popup){candidate_background.reset();CloseHandle(singleton);return 1;}
     tray(true);
     if(requested_document)PostMessageW(main_window,DOCUMENT,requested_document-1,0);
     key_hook=SetWindowsHookExW(WH_KEYBOARD_LL,keyboard,i,0);
@@ -430,5 +438,5 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     visibility_hook=SetWinEventHook(EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE,nullptr,visibility_event,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
     if(!key_hook||!mouse_hook){balloon(L"输入监听启动失败。请退出后重试。");DestroyWindow(main_window);}else worker=std::thread(work);
     MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
-    stopping=true;wake.notify_one();if(worker.joinable())worker.join();DestroyWindow(popup);DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return 0;
+    stopping=true;wake.notify_one();if(worker.joinable())worker.join();DestroyWindow(popup);candidate_background.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return 0;
 }

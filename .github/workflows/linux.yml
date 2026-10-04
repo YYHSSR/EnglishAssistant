@@ -1,7 +1,7 @@
 name: Ubuntu compatibility
 on:
   push:
-    paths: ['src/**', 'linux/**', 'tests/**', 'data/**', 'CMakeLists.txt', '*.sh', '.github/workflows/linux.yml']
+    paths: ['src/**', 'linux/**', 'tests/**', 'data/**', 'translation/**', 'models/**', 'resources/backgrounds/**', 'CMakeLists.txt', '*.sh', '.github/workflows/linux.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/app" -w /app -e DEBIAN_FRONTEND=noninteractive ubuntu:${{ matrix.ubuntu }} sh -eu -c '
             apt-get update -qq
-            apt-get install -y -qq g++ cmake python3-gi gir1.2-ibus-1.0 gir1.2-gtk-3.0 ibus ibus-libpinyin dbus-x11 xvfb xauth locales
+            apt-get install -y -qq g++ cmake python3-gi python3-gi-cairo python3-venv gir1.2-ibus-1.0 gir1.2-gtk-3.0 gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav ibus ibus-libpinyin dbus-x11 xvfb xauth locales
             locale-gen en_US.UTF-8
             export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
             mkdir -p build
@@ -27,6 +27,8 @@ jobs:
             cmake --build . -- -j2
             ctest --output-on-failure
             cd ..
+            python3 -m venv runtime/venv
+            runtime/venv/bin/python -m pip install -r translation/requirements.txt
             python3 -m py_compile linux/*.py tests/linux_integration.py
             sh -n install.sh start.sh
             dbus-run-session -- xvfb-run -a sh -eu -c "ibus-daemon --daemonize --panel=disable; sleep 2; python3 tests/linux_integration.py"

@@ -13,13 +13,13 @@ sh ./install.sh
 sh ./start.sh
 ```
 
-安装脚本按需通过 apt 安装构建工具和系统 IBus / GTK 依赖，编译共用 C++ 核心、运行测试，并注册当前用户的输入源。随后在系统输入源中选择 **EnglishAssistant 智能拼音**。它调用系统 libpinyin 保留中文候选，在原生 IBus 面板中加入英文。若列表未刷新，注销后重新登录。原有输入源保留，可随时切回。
+安装脚本按需通过 apt 安装构建工具和系统 IBus / GTK / GStreamer 依赖，安装独立 Python 翻译运行环境，编译共用 C++ 核心、运行测试，并注册当前用户的输入源。随后在系统输入源中选择 **EnglishAssistant 智能拼音**。它调用系统 libpinyin 保留中文候选。若列表未刷新，注销后重新登录。原有输入源保留，可随时切回。
 
-**Ctrl＋数字 / 方向键** 选择英文，松开输出；普通空格和数字选择中文。同一中文词的英文释义同行排列，长内容换行；Linux 使用原生 IBus 面板与系统主题。
+**Ctrl＋数字 / 方向键** 选择英文，松开输出；普通空格和数字选择中文。同一中文词的英文释义同行排列，长内容换行。Xorg 会话使用不抢焦点的自定义英文背景面板；Wayland 会话保留系统英文辅助面板与系统主题。要使用英文选词框背景，在登录页选择 **Ubuntu on Xorg**。翻译框背景不受这一限制。
 
-运行 `sh ./start.sh --translate` 打开离线英文转中文翻译框。输入法菜单可打开翻译框、个人词表和使用说明、设置开机自启动。部分 GNOME 桌面不显示旧式托盘图标，可使用输入法菜单或应用列表中的 EnglishAssistant。安装时需要下载系统依赖；日常查词完全离线。移动目录后重新运行 install.sh 更新路径。
+运行 `sh ./start.sh --translate` 打开离线英文转中文翻译框。输入法菜单可打开翻译框、两个背景设置、设置开机自启动。部分 GNOME 桌面不显示旧式托盘图标，可使用输入法菜单或应用列表中的 EnglishAssistant。安装需要下载系统依赖和 Python wheels；日常查词与整句翻译完全离线。移动目录后重新运行 install.sh 更新路径。
 
-支持 Ubuntu 20.04、20.04 及较新版本的 **IBus + libpinyin** 桌面，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
+支持 Ubuntu 20.04 及较新版本的 **IBus + libpinyin** 桌面，安装环境为 x86_64，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
 
 ## 使用
 
@@ -34,9 +34,9 @@ sh ./start.sh
 
 英文面板优先放在中文候选上方，预留拼音行与间距；空间不足时减少每页条目，自动分页，靠近屏幕顶端时改放下方。
 
-右键托盘可暂停、设置**开机自启动**、打开**英文 → 中文翻译框**、编辑个人词表、重新加载词表、打开使用说明或退出。均使用原生窗口，不依赖系统记事本。
+右键托盘可暂停、设置**开机自启动**、打开**英文 → 中文翻译框**、**翻译框背景…**、**英文选词框背景…**或退出。使用说明与两个个人词表菜单已移除。
 
-详细操作见 [使用说明](使用说明.md)。可以移动整个文件夹；保留 exe、data、personal.example.tsv、说明与许可文件。首次启动自动创建 personal.tsv；升级不会覆盖已有词表。
+详细操作见 [使用说明](使用说明.md)。可以移动整个文件夹；保留 exe、data、models、runtime、translation、resources 与许可文件。首次启动自动创建 personal.tsv；升级不会覆盖已有词表。模型权重约 80 MB，Windows 翻译运行库压缩约 58 MB，初次翻译自动解压；只运行英文候选时不加载模型。
 
 ## 离线词库与整句
 
@@ -52,7 +52,15 @@ sh ./start.sh
 
 ## 英文转中文翻译框
 
-右键托盘 → **英文 → 中文翻译框**，在上框粘贴英文，点击“翻译为中文”或按 Ctrl＋Enter，下框显示中文。优先整句、词条和模板匹配；其他长句按词组提供参考，明确提示“不是通顺的整句译文”，未收录部分保留原文并标记。支持选中结果后 Ctrl＋C；不自动读取剪贴板，不保存粘贴历史。
+右键托盘 → **英文 → 中文翻译框**，在上框粘贴英文，点击“翻译为中文”或按 Ctrl＋Enter，下框显示中文。优先精确本地词条；其他英文句子和段落使用 **OPUS 英中本地神经翻译模型**，不再将单词释义拼接成译文。截图示例 `Stateless GitHub App installation tokens rolled out` → **无状态 GitHub App 安装令牌已推出**。模型按句处理、保留段落，每次最多 8000 字符，过长文本请分段。
+
+推理完全在本机 CPU 运行，不调用联网服务，没有额度限制。首次使用可能稍慢；关闭窗口会取消任务并回收翻译进程。支持选中结果后 Ctrl＋C；不自动读取剪贴板，不保存粘贴历史。机器翻译仍可能误译或遗漏细节，请核对专名和专业内容。模型来源与完整许可见 [models/README.md](models/README.md)。
+
+## 自定义背景
+
+托盘的 **翻译框背景…** 和 **英文选词框背景…** 分别设置两种窗口。点击“选择图片 / 视频”，或者把文件拖入设置窗口。支持 PNG、JPG、BMP、GIF 动图，以及系统可解码的 MP4、WMV、MOV、AVI 视频；优先使用 H.264 MP4。可在设置中勾选“播放视频声音”，默认静音，预览始终静音。窗口隐藏时停止刷新并暂停声音；“恢复默认背景”可随时还原。
+
+默认提供沃雅妮莎主题的 **月下水庭**（翻译框）与 **晨光涟漪**（英文选词框），为两张不同的静态图片，采用浅色卡片保证文字可读。使用 Codex 内置图像工具生成，设计提示见 [resources/backgrounds/PROMPTS.md](resources/backgrounds/PROMPTS.md)。Windows 自定义媒体保存在 `backgrounds/custom`，Linux 保存在当前用户的 `~/.config/EnglishAssistant/backgrounds`，均不提交到仓库。图片最大 8192×8192、视频最大 4096×4096；推荐 1080p 或以下。
 
 ## 开机自启动
 
@@ -60,7 +68,7 @@ sh ./start.sh
 
 ## 构建
 
-共用词库核心为 C++17。Windows 使用原生 Win32、CMake 3.20+、Ninja、MinGW-w64 GCC，无需 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus；CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建，不用 pip。
+共用词库核心为 C++17。Windows 使用原生 Win32、GDI+、Media Foundation、CMake 3.20+、Ninja、MinGW-w64 GCC；内置独立 Python 运行库只用于整句翻译，无需额外安装 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus、GStreamer，翻译使用独立 venv 与 CTranslate2 4.4.0；CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建。
 
 ```powershell
 .\EnglishAssistant.exe --quit
@@ -81,6 +89,7 @@ UIA 候选读取和翻译框查词在线程中运行，键盘回调只检查已�
 
 - 青简中英、英中词库及筛选后的派生文件：GPL-3.0-or-later，许可全文在 data/LICENSE.GPL-3.0.txt。
 - 沃雅妮莎头像：原神官方素材，版权归 miHoYo / HoYoverse，未授予素材再许可。
+- 本地翻译模型：Apache-2.0；Python、CTranslate2、SentencePiece 等运行库保持各自许可，不受本项目非商业限制。
 
 详见 [THIRD_PARTY.md](THIRD_PARTY.md)。本项目为独立实现，未使用青简输入引擎；是非官方、非商业同人项目，与 miHoYo / HoYoverse 无隶属或背书关系。
 

@@ -11,9 +11,11 @@ from pathlib import Path
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('IBus', '1.0')
-from gi.repository import Gtk, IBus, GLib, Gio
+from gi.repository import Gtk, IBus, GLib, Gio, Gdk
 from core import Core, ROOT, autostart, autostart_enabled, desktop_exec
 from engine import AssistantEngine, ensure_libpinyin
+from neural import Neural
+from backgrounds import Background, CandidatePanel, show_settings
 
 
 class AssistantFactory(IBus.Factory):
@@ -41,6 +43,10 @@ class Application:
         self.translation = None
         self.editors = []
         self.translate_generation = 0
+        self.translation_background = None
+        self.panel = None
+        # GNOME owns native Wayland panel positioning; retain that panel there.
+        self.custom_panel = 'x11' in type(Gdk.Display.get_default()).__name__.lower()
         self.bus = IBus.Bus()
         if not self.bus.is_connected():
             raise RuntimeError('IBus 未运行。请先启动系统 IBus 输入法，或注销后重新登录。')
@@ -51,7 +57,7 @@ class Application:
         self.bus.request_name('org.freedesktop.IBus.EnglishAssistant', 0)
         component = IBus.Component(name='org.freedesktop.IBus.EnglishAssistant',
                                    description='EnglishAssistant offline IBus companion',
-                                   version='0.7.0', license='Free noncommercial', author='YYHSSR',
+                                   version='0.8.0', license='Free noncommercial', author='YYHSSR',
                                    homepage='https://github.com/YYHSSR/EnglishAssistant',
                                    command_line=desktop_exec('/usr/bin/python3', ROOT / 'linux' / 'app.py', '--ibus'))
         component.add_engine(IBus.EngineDesc(name='EnglishAssistant', longname='EnglishAssistant 智能拼音',
@@ -91,12 +97,37 @@ class Application:
         item('暂停英文候选', lambda: setattr(self, 'paused', not self.paused), self.paused)
         item('开机自启动', self.toggle_startup, self.startup_enabled())
         item('英文 → 中文翻译框', self.show_translation)
-        item('编辑个人词表', lambda: self.show_editor(ROOT / 'personal.tsv', True))
-        item('重新加载个人词表', self.reload)
-        item('使用说明', lambda: self.show_editor(ROOT / '使用说明.md', False))
+        item('翻译框背景…', lambda: self.show_background('translation'))
+        item('英文选词框背景…', lambda: self.show_background('candidates'))
         item('退出', Gtk.main_quit)
         menu.show_all()
         menu.popup(None, None, Gtk.StatusIcon.position_menu, icon, button, time)
+
+    def show_background(self, kind):
+        window = show_settings(self, kind)
+        if kind == 'candidates' and not self.custom_panel:
+            note = Gtk.Label(label='当前 Wayland 会话使用系统候选面板；自定义英文背景需登录 Ubuntu on Xorg。')
+            note.set_line_wrap(True)
+            window.get_child().pack_start(note, False, False, 0)
+            note.show()
+
+    def reload_backgrounds(self, kind):
+        if kind == 'translation' and self.translation_background:
+            self.translation_background.reload()
+        if kind == 'candidates' and self.panel:
+            self.panel.background.reload()
+
+    def show_candidates(self, text, cursor):
+        if not self.custom_panel:
+            return False
+        if not self.panel:
+            self.panel = CandidatePanel()
+        self.panel.show(text, cursor)
+        return True
+
+    def hide_candidates(self):
+        if self.panel:
+            self.panel.hide()
 
     def reload(self):
         # Swap only between requests; a worker keeps its current core alive.
@@ -154,11 +185,15 @@ class Application:
         window.set_default_size(720, 560)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_border_width(14)
-        window.add(box)
+        overlay = Gtk.Overlay()
+        window.add(overlay)
+        background = Background('translation')
+        self.translation_background = background
+        overlay.add(background)
+        overlay.add_overlay(box)
+        box.set_margin_end(150)
         tools = Gtk.Box(spacing=6)
-        for label, callback in [('个人词表', lambda: self.show_editor(ROOT / 'personal.tsv', True)),
-                                ('重新加载', self.reload), ('使用说明', lambda: self.show_editor(ROOT / '使用说明.md', False)),
-                                ('开机自启动', self.toggle_startup)]:
+        for label, callback in [('翻译框背景', lambda: self.show_background('translation'))]:
             tool = Gtk.Button(label=label)
             tool.connect('clicked', lambda _, action=callback: action())
             tools.pack_start(tool, False, False, 0)
@@ -170,9 +205,10 @@ class Application:
         box.pack_start(button, False, False, 0)
         destination, scroll = self.text_area(False)
         box.pack_start(scroll, True, True, 0)
-        status = Gtk.Label(label='未收录的长句按词组提供参考，并标记未知内容。')
+        status = Gtk.Label(label='本地模型 · 支持完整英文句子和段落')
         status.set_line_wrap(True)
         box.pack_start(status, False, False, 0)
+        neural = Neural()
         def translate(*_):
             if not button.get_sensitive():
                 return
@@ -183,6 +219,7 @@ class Application:
                 return
             button.set_sensitive(False)
             source.set_editable(False)
+            status.set_text('正在运行本地翻译模型…')
             self.translate_generation += 1
             generation = self.translate_generation
             core = self.core
@@ -195,11 +232,13 @@ class Application:
                     status.set_text('翻译失败：' + error)
                 else:
                     destination.get_buffer().set_text(reply['text'])
-                    status.set_text('已匹配本地整句 / 词条' if reply['exact'] else '词组参考；不是通顺的整句译文。未收录 {} 项。'.format(len(reply['unknown'])))
+                    status.set_text('已匹配本地整句 / 词条' if reply['exact'] else '本地模型译文 · 请核对专名及专业术语')
                 return False
             def work():
                 try:
                     reply = core.query('zh', text)
+                    if not reply['exact']:
+                        reply['text'] = neural.translate(text)
                     GLib.idle_add(finish, reply, None)
                 except Exception as error:
                     GLib.idle_add(finish, None, str(error))
@@ -212,7 +251,9 @@ class Application:
             return False
         window.connect('key-press-event', key)
         def closed(*_):
+            neural.close()
             self.translation = None
+            self.translation_background = None
             self.translate_generation += 1
         window.connect('destroy', closed)
         window.show_all()
@@ -262,6 +303,12 @@ def main():
     server.close()
     address.unlink()
     app.core.close()
+    if app.translation:
+        app.translation.destroy()
+    if app.panel:
+        app.panel.close()
+    for editor in list(app.editors):
+        editor.destroy()
     atexit.unregister(app.core.close)
     return 0
 

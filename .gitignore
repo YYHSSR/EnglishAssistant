@@ -10,6 +10,11 @@
 *.saving
 *.log
 *.zip
+!/runtime/windows-runtime.zip
+/runtime/python/
+/runtime/unpack-*/
+/runtime/venv/
+/backgrounds/custom/
 *.obj
 *.o
 *.a

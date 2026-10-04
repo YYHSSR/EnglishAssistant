@@ -56,6 +56,7 @@ class AssistantEngine(IBus.Engine):
         self.swallowed = set()
         self.ctrl_keys = set()
         self.generation = 0
+        self.cursor = (0, 0, 0, 0)
         self.revision = 0
         self.inner_path = self.connection.call_sync(
             SERVICE, IBus.PATH_FACTORY, 'org.freedesktop.IBus.Factory', 'CreateEngine',
@@ -83,6 +84,8 @@ class AssistantEngine(IBus.Engine):
         self.frozen = False
         self.generation += 1
         self.hide_auxiliary_text()
+        if hasattr(self.ui, 'hide_candidates'):
+            self.ui.hide_candidates()
 
     def inner_signal(self, connection, sender, path, interface, signal, parameters):
         try:
@@ -119,8 +122,8 @@ class AssistantEngine(IBus.Engine):
             elif signal == 'RegisterProperties':
                 props = value(0)
                 props.append(IBus.Property(key='ea-translate', label=IBus.Text.new_from_string('英文 → 中文翻译框')))
-                for key, label in [('ea-pause', '暂停 / 恢复英文候选'), ('ea-personal', '编辑个人词表'),
-                                   ('ea-reload', '重新加载个人词表'), ('ea-help', '使用说明')]:
+                for key, label in [('ea-pause', '暂停 / 恢复英文候选'), ('ea-bg-translation', '翻译框背景…'),
+                                   ('ea-bg-candidates', '英文选词框背景…')]:
                     props.append(IBus.Property(key=key, label=IBus.Text.new_from_string(label)))
                 props.append(IBus.Property(key='ea-startup', prop_type=IBus.PropType.TOGGLE,
                                           label=IBus.Text.new_from_string('开机自启动'),
@@ -154,6 +157,8 @@ class AssistantEngine(IBus.Engine):
     def render(self):
         if not self.options or not self.focused:
             self.hide_auxiliary_text()
+            if hasattr(self.ui, 'hide_candidates'):
+                self.ui.hide_candidates()
             return
         lines = ['英文 · Ctrl + 数字 / 方向键，松开输出']
         last = None
@@ -168,7 +173,11 @@ class AssistantEngine(IBus.Engine):
             last = label
         if len(self.options) > 9:
             lines.append('第 {} / {} 页'.format(self.page + 1, (len(self.options) + 8) // 9))
-        self.update_auxiliary_text(IBus.Text.new_from_string('\n'.join(lines)), True)
+        body = '\n'.join(lines)
+        if hasattr(self.ui, 'show_candidates') and self.ui.show_candidates(body, self.cursor):
+            self.hide_auxiliary_text()
+        else:
+            self.update_auxiliary_text(IBus.Text.new_from_string(body), True)
 
     def do_process_key_event(self, keyval, keycode, state):
         if not self.focused or self.password:
@@ -251,7 +260,10 @@ class AssistantEngine(IBus.Engine):
         self.inner('Reset')
 
     def do_set_cursor_location(self, x, y, width, height):
+        self.cursor = (x, y, width, height)
         self.inner('SetCursorLocation', '(iiii)', (x, y, width, height))
+        if self.options:
+            self.render()
 
     def do_set_content_type(self, purpose, hints):
         self.password = purpose in (int(IBus.InputPurpose.PASSWORD), int(IBus.InputPurpose.PIN))
@@ -282,14 +294,8 @@ class AssistantEngine(IBus.Engine):
         elif name == 'ea-pause':
             self.ui.paused = not self.ui.paused
             self.clear()
-        elif name == 'ea-personal':
-            from core import ROOT
-            self.ui.show_editor(ROOT / 'personal.tsv', True)
-        elif name == 'ea-help':
-            from core import ROOT
-            self.ui.show_editor(ROOT / '使用说明.md', False)
-        elif name == 'ea-reload':
-            self.ui.reload()
+        elif name in ('ea-bg-translation', 'ea-bg-candidates'):
+            self.ui.show_background('translation' if name == 'ea-bg-translation' else 'candidates')
         else:
             self.inner('PropertyActivate', '(su)', (name, state))
 

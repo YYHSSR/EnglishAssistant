@@ -21,7 +21,7 @@ def pump(seconds=0.1):
 
 
 def controls(window):
-    children = window.get_child().get_children()
+    children = next(child for child in window.get_child().get_children() if isinstance(child, Gtk.Box)).get_children()
     views = [item.get_child() for item in children if isinstance(item, Gtk.ScrolledWindow)]
     button = next(item for item in children if isinstance(item, Gtk.Button) and item.get_label() == '翻译为中文')
     return views[0], views[1], button
@@ -44,6 +44,26 @@ try:
     assert text(output) == '我正在开会', text(output)
     assert not output.get_editable()
     print('PASS GTK offline translation and copyable readonly output', flush=True)
+    source.get_buffer().set_text('Stateless GitHub App installation tokens rolled out')
+    button.emit('clicked')
+    deadline = time.monotonic() + 60
+    while not button.get_sensitive() and time.monotonic() < deadline:
+        pump()
+    assert '无状态' in text(output) and 'GitHub' in text(output) and '令牌' in text(output), text(output)
+    assert '未收录' not in text(output)
+    print('PASS GTK local neural sentence translation', flush=True)
+    assert application.custom_panel
+    application.show_candidates('发展: 1 develop   2 development   3 growth', (300, 500, 1, 20))
+    pump()
+    assert application.panel.window.get_visible()
+    assert not application.panel.window.get_accept_focus()
+    application.hide_candidates()
+    assert not application.panel.window.get_visible()
+    for kind in ('translation', 'candidates'):
+        application.show_background(kind)
+        pump()
+        application.editors[-1].destroy()
+    print('PASS GTK backgrounds and non-focus X11 candidate panel', flush=True)
     source.get_buffer().set_text('hello ' * 1000)
     button.emit('clicked')
     application.translation.destroy()
@@ -69,3 +89,5 @@ finally:
     if application.translation:
         application.translation.destroy()
     application.core.close()
+    if application.panel:
+        application.panel.close()

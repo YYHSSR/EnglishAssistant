@@ -26,3 +26,14 @@ Linux uses separately installed distribution packages: IBus (https://github.com/
 - Included as `resources/vodyanitsa.png`; `resources/app.ico` only converts/resizes the same transparent avatar into Windows icon sizes.
 - © All rights reserved by miHoYo / HoYoverse. Other properties belong to their respective owners. This is an unofficial, non-commercial fan project; it is not endorsed by or affiliated with miHoYo / HoYoverse.
 - Game artwork is excluded from the program's source license. This project does not grant permission to redistribute or commercially use the artwork; rights remain with its owners. General official content guidance: https://www.hoyolab.com/article/142895 .
+
+## Offline translation model and runtime
+
+- OPUS / Helsinki-NLP English–Chinese model: https://huggingface.co/Helsinki-NLP/opus-mt-en-zh, Apache-2.0. The int8 CTranslate2 conversion is from https://huggingface.co/jiangzhuo9357/opus-mt-en-zh-ct2 at the revision recorded in `models/manifest.json`. Full license: `models/LICENSE.Apache-2.0.txt`. We did not alter its weights. Model provenance and inference changes: `models/README.md`.
+- Windows embedded Python: https://www.python.org/downloads/release/python-31210/ (PSF license). Runtime wheels: CTranslate2 https://github.com/OpenNMT/CTranslate2 (MIT), SentencePiece https://github.com/google/sentencepiece (Apache-2.0), NumPy https://numpy.org (BSD and its bundled numerical-library licenses), PyYAML https://pyyaml.org (MIT), setuptools https://github.com/pypa/setuptools (MIT), pip https://pip.pypa.io (MIT and vendored dependency notices). Original license files remain inside `runtime/windows-runtime.zip`; extract it to review `LICENSE.txt` and the packages' `.dist-info` directories. See `runtime/README.md` and `translation/requirements.txt` for versions.
+- Windows videos use system Media Foundation. Linux video playback uses separately installed GStreamer packages: https://gstreamer.freedesktop.org/ (component licenses apply; not bundled).
+- The project's non-commercial restriction does not modify the licenses or rights of these third-party components.
+
+## Generated fan backgrounds
+
+`resources/backgrounds/moon-garden.png` and `morning-ripple.png` were generated with Codex's built-in image-generation tool using the character avatar as a reference. Design prompts are documented in `resources/backgrounds/PROMPTS.md`. These are unofficial fan backgrounds; underlying Genshin Impact character rights remain with miHoYo / HoYoverse and are excluded from the program license. No endorsement or commercial rights are granted.
