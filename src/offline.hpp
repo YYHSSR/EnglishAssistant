@@ -13,7 +13,7 @@ class OfflineTranslator {
     void add_reverse_phrases(const fs::path& path);
     std::wstring chinese_entry(const std::wstring& text)const;
 public:
-    bool open(const std::wstring& folder);
+    bool open(const std::wstring& folder,bool use_personal=true);
     std::vector<std::wstring> to_english(const std::wstring& text)const;
     ForwardReply translate_to_english(const std::wstring& text)const;
     OfflineReply to_chinese(const std::wstring& text)const;

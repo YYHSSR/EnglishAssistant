@@ -20,13 +20,14 @@ void OfflineTranslator::add_reverse_phrases(const fs::path& path){
         for(const auto&english:parse_senses(std::string_view(line).substr(tab+1)))reverse_phrases_[normalize(english)]=chinese;
     }
 }
-bool OfflineTranslator::open(const std::wstring& folder){
+bool OfflineTranslator::open(const std::wstring& folder,bool use_personal){
     patterns_.clear();reverse_phrases_.clear();
     auto root=native_path(folder);
     auto path=[&](const char* file){return wide((root/file).u8string());};
     if(!forward_.open(path("data/glossary-en.tsv"))||!reverse_.open(path("data/glossary-zh.tsv")))return false;
-    forward_.load_phrases(path("data/phrases.tsv"));forward_.load_supplements(path("data/supplements.tsv"));forward_.load_personal(path("personal.tsv"));
-    add_reverse_phrases(root/"data/phrases.tsv");add_reverse_phrases(root/"personal.tsv");
+    forward_.load_phrases(path("data/phrases.tsv"));forward_.load_supplements(path("data/supplements.tsv"));
+    add_reverse_phrases(root/"data/phrases.tsv");
+    if(use_personal){forward_.load_personal(path("personal.tsv"));add_reverse_phrases(root/"personal.tsv");}
     std::ifstream in{root/"data/chat-patterns.tsv"};std::string line;
     while(std::getline(in,line)){
         if(line.empty()||line[0]=='#')continue;
@@ -55,15 +56,16 @@ ForwardReply OfflineTranslator::translate_to_english(const std::wstring& text)co
     auto normalized=normalize(text);reply.senses=to_english(normalized);
     if(!reply.senses.empty())return reply;
     auto chinese=[](wchar_t c){return (c>=0x3400&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff);};
+    auto punctuation=[](wchar_t c){return std::wstring_view(L"，,。.！!？?；;：:").find(c)!=std::wstring_view::npos;};
     std::wstring output;
     auto append=[&](const std::wstring& value){if(value.empty())return;if(!output.empty()&&output.back()!=L'\n'&&output.back()!=L' ')output+=L' ';output+=value;};
     for(size_t at=0;at<text.size();){
         if(iswspace(text[at])){if(text[at]==L'\n')output+=L'\n';++at;continue;}
         if(!chinese(text[at])){
             wchar_t c=text[at++];
-            if(c==L'，'||c==L','||c==L'。'||c==L'.'||c==L'！'||c==L'!'||c==L'？'||c==L'?'||c==L'；'||c==L';'||c==L'：'||c==L':'){
+            if(punctuation(c)){
                 output+=c==L'，'?L',':c==L'。'?L'.':c==L'！'?L'!':c==L'？'?L'?':c==L'；'?L';':c==L'：'?L':':c;
-            }else{size_t begin=at-1;while(at<text.size()&&!chinese(text[at])&&!iswspace(text[at])&&text[at]!=L','&&text[at]!=L'.'&&text[at]!=L'!'&&text[at]!=L'?')++at;append(text.substr(begin,at-begin));}
+            }else{size_t begin=at-1;while(at<text.size()&&!chinese(text[at])&&!iswspace(text[at])&&!punctuation(text[at]))++at;append(text.substr(begin,at-begin));}
             continue;
         }
         size_t end=at;while(end<text.size()&&chinese(text[end]))++end;

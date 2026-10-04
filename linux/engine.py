@@ -55,6 +55,7 @@ class AssistantEngine(IBus.Engine):
         self.suppress_commit = False
         self.swallowed = set()
         self.generation = 0
+        self.revision = 0
         self.inner_path = self.connection.call_sync(
             SERVICE, IBus.PATH_FACTORY, 'org.freedesktop.IBus.Factory', 'CreateEngine',
             GLib.Variant('(s)', ('libpinyin',)), GLib.VariantType.new('(o)'),
@@ -199,6 +200,7 @@ class AssistantEngine(IBus.Engine):
                 self.render()
                 return True
         if not release:
+            self.revision += 1
             self.clear()
         try:
             return self.inner('ProcessKeyEvent', '(uuu)', (keyval, keycode, state)).unpack()[0]
@@ -212,6 +214,7 @@ class AssistantEngine(IBus.Engine):
             self.clear()
             return
         english = self.options[self.selected][1]
+        revision = self.revision
         self.suppress_commit = True
         self.inner('Reset')
         # Drain queued native reset signals before permitting new commits.
@@ -221,20 +224,23 @@ class AssistantEngine(IBus.Engine):
         self.suppress_commit = False
         self.hide_preedit_text()
         self.hide_lookup_table()
-        if self.focused and not self.password:
+        if self.focused and not self.password and revision == self.revision:
             self.commit_text(IBus.Text.new_from_string(english))
 
     def do_focus_in(self):
+        self.revision += 1
         self.focused = True
         self.inner('FocusIn')
 
     def do_focus_out(self):
+        self.revision += 1
         self.focused = False
         self.clear()
         self.inner('FocusOut')
         self.inner('Reset')
 
     def do_reset(self):
+        self.revision += 1
         self.clear()
         self.inner('Reset')
 

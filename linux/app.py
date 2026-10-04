@@ -104,7 +104,7 @@ class Application:
         previous = self.core
         self.core = replacement
         AssistantEngine.core = replacement
-        previous.close()
+        threading.Thread(target=previous.close, daemon=True).start()
 
     @staticmethod
     def text_area(editable=True):

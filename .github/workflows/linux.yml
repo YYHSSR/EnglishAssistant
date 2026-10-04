@@ -28,5 +28,7 @@ jobs:
             ctest --output-on-failure
             cd ..
             python3 -m py_compile linux/*.py tests/linux_integration.py
+            sh -n install.sh start.sh
             dbus-run-session -- xvfb-run -a sh -eu -c "ibus-daemon --daemonize --panel=disable; sleep 2; python3 tests/linux_integration.py"
+            dbus-run-session -- xvfb-run -a sh -eu -c "ibus-daemon --daemonize --panel=disable; sleep 2; python3 tests/linux_ui.py"
           '
