@@ -23,7 +23,7 @@ struct GraphicsRuntime {
     ~GraphicsRuntime(){MFShutdown();if(token)Gdiplus::GdiplusShutdown(token);}
 };
 void runtime(){static GraphicsRuntime initialized;}
-struct AudioState{std::atomic<bool> active{false};};
+struct AudioState{std::atomic<bool> active{false};std::atomic<HRESULT> failure{S_OK};};
 class AudioEvents final:public IMFPMediaPlayerCallback{
     std::atomic<ULONG> refs_{1};std::shared_ptr<AudioState> state_;
 public:
@@ -32,7 +32,7 @@ public:
     ULONG STDMETHODCALLTYPE AddRef()override{return ++refs_;}
     ULONG STDMETHODCALLTYPE Release()override{auto count=--refs_;if(!count)delete this;return count;}
     void STDMETHODCALLTYPE OnMediaPlayerEvent(MFP_EVENT_HEADER* event)override{
-        if(FAILED(event->hrEvent)||!state_->active)return;
+        if(FAILED(event->hrEvent)){state_->failure=event->hrEvent;return;}if(!state_->active)return;
         if(event->eEventType==MFP_EVENT_TYPE_MEDIAITEM_SET)event->pMediaPlayer->Play();
         if(event->eEventType==MFP_EVENT_TYPE_PLAYBACK_ENDED){PROPVARIANT zero{};zero.vt=VT_I8;zero.hVal.QuadPart=0;event->pMediaPlayer->SetPosition(MFP_POSITIONTYPE_100NS,&zero);event->pMediaPlayer->Play();}
     }
@@ -110,8 +110,11 @@ bool Background::load(const std::wstring& path,bool sound){
                 Com<IMFPMediaItem> item;
                 if(SUCCEEDED(replacement->audio->CreateMediaItemFromURL(path.c_str(),TRUE,0,item.put()))){
                     DWORD streams=0;item->GetNumberOfStreams(&streams);
-                    for(DWORD index=0;index<streams;++index){PROPVARIANT type{};if(SUCCEEDED(item->GetStreamAttribute(index,MF_MT_MAJOR_TYPE,&type))){item->SetStreamSelection(index,type.vt==VT_CLSID&&*type.puuid==MFMediaType_Audio);PropVariantClear(&type);}}
-                    replacement->audio->SetMediaItem(item.get());
+                    for(DWORD index=0;index<streams;++index)item->SetStreamSelection(index,FALSE);
+                    std::vector<DWORD> audio_streams;
+                    for(DWORD index=0;index<streams;++index){item->SetStreamSelection(index,TRUE);BOOL has=FALSE,selected=FALSE;if(SUCCEEDED(item->HasAudio(&has,&selected))&&has&&selected)audio_streams.push_back(index);item->SetStreamSelection(index,FALSE);}
+                    for(auto index:audio_streams)item->SetStreamSelection(index,TRUE);
+                    if(!audio_streams.empty())replacement->audio_state->failure=replacement->audio->SetMediaItem(item.get());
                 }
             }
         }
@@ -165,8 +168,10 @@ void Background::paint(HDC dc,RECT bounds){
         if(!impl_->frame.empty()){Gdiplus::Bitmap frame(impl_->width,impl_->height,impl_->width*4,PixelFormat32bppRGB,impl_->frame.data());draw(frame);}
     }
 }
-std::wstring Background::error()const{std::lock_guard<std::mutex> lock(impl_->mutex);return impl_->failure;}
+std::wstring Background::error()const{std::lock_guard<std::mutex> lock(impl_->mutex);if(!impl_->failure.empty())return impl_->failure;return FAILED(impl_->audio_state->failure)?L"视频声音无法播放，请检查系统音频设备或更换文件。":L"";}
 bool Background::animated()const{return impl_->decoder.joinable()||impl_->gif_count>1;}
+void Background::mute(bool value){if(impl_->audio)impl_->audio->SetMute(value);}
+bool Background::sound_playing()const{MFP_MEDIAPLAYER_STATE state=MFP_MEDIAPLAYER_STATE_EMPTY;if(impl_->audio)impl_->audio->GetState(&state);return state==MFP_MEDIAPLAYER_STATE_PLAYING;}
 std::wstring background_path(const std::wstring& root,BackgroundKind kind){
     wchar_t path[32768]{};GetPrivateProfileStringW(section(kind),L"path",L"",path,32768,(root+L"\\settings.ini").c_str());
     auto value=std::filesystem::path(path);

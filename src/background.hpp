@@ -14,6 +14,8 @@ public:
     void paint(HDC dc,RECT bounds);
     std::wstring error()const;
     bool animated()const;
+    void mute(bool value);
+    bool sound_playing()const;
 };
 std::wstring background_path(const std::wstring& root,BackgroundKind kind);
 bool background_sound(const std::wstring& root,BackgroundKind kind);
