@@ -68,7 +68,7 @@ sh ./start.sh
 
 ## 构建
 
-共用词库核心为 C++17。Windows 使用原生 Win32、GDI+、Media Foundation、CMake 3.20+、Ninja、MinGW-w64 GCC；内置独立 Python 运行库只用于整句翻译，无需额外安装 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus、GStreamer，翻译使用独立 venv 与 CTranslate2 4.4.0；CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建。
+共用词库核心为 C++17。Windows 使用原生 Win32、GDI+、Media Foundation、CMake 3.20+、Ninja、MinGW-w64 GCC；内置独立 Python 运行库只用于整句翻译，无需额外安装 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus、GStreamer，翻译使用独立 venv；运行库按 Python 版本选择，兼容新版 Ubuntu 的 Python 3.14。CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建。
 
 ```powershell
 .\EnglishAssistant.exe --quit
