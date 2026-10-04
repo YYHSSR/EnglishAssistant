@@ -19,6 +19,6 @@ $python = Join-Path $pythonRoot 'python.exe'
 if ($LASTEXITCODE) { throw 'pip installation failed.' }
 & $python -m pip install -r (Join-Path $root 'translation/requirements.txt')
 if ($LASTEXITCODE) { throw 'Runtime dependencies installation failed.' }
-[IO.File]::WriteAllText((Join-Path $pythonRoot 'ready.txt'), 'EnglishAssistant offline runtime 0.8', [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $pythonRoot 'ready.txt'), 'PinyinShift offline runtime', [Text.UTF8Encoding]::new($false))
 Compress-Archive -Path (Join-Path $pythonRoot '*') -DestinationPath (Join-Path $root 'runtime/windows-runtime.zip') -CompressionLevel Optimal -Force
 Write-Host 'Runtime packaged. Update runtime/README.md with its SHA-256.'

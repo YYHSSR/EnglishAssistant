@@ -67,11 +67,11 @@ void notify_worker(){wake_version.fetch_add(1,std::memory_order_relaxed);wake.no
 int px(int v){return MulDiv(v,scale_dpi,96);}
 void balloon(const wchar_t* message){
     NOTIFYICONDATAW n{};n.cbSize=sizeof(n);n.hWnd=main_window;n.uID=1;n.uFlags=NIF_INFO;
-    wcscpy_s(n.szInfoTitle,L"EnglishAssistant");wcsncpy_s(n.szInfo,message,_TRUNCATE);n.dwInfoFlags=NIIF_INFO;Shell_NotifyIconW(NIM_MODIFY,&n);
+    wcscpy_s(n.szInfoTitle,L"PinyinShift");wcsncpy_s(n.szInfo,message,_TRUNCATE);n.dwInfoFlags=NIIF_INFO;Shell_NotifyIconW(NIM_MODIFY,&n);
 }
 void tray(bool add){
     NOTIFYICONDATAW n{};n.cbSize=sizeof(n);n.hWnd=main_window;n.uID=1;n.uFlags=NIF_ICON|NIF_TIP|NIF_MESSAGE;n.hIcon=tray_icon;n.uCallbackMessage=TRAY;
-    swprintf_s(n.szTip,L"EnglishAssistant · %s · %zu 条译词",paused?L"已暂停":L"运行中",current_dictionary()->english_size());
+    swprintf_s(n.szTip,L"PinyinShift · %s · %zu 条译词",paused?L"已暂停":L"运行中",current_dictionary()->english_size());
     Shell_NotifyIconW(add?NIM_ADD:NIM_MODIFY,&n);
 }
 bool modifiers_up(){return !(GetAsyncKeyState(VK_CONTROL)&0x8000)&&!(GetAsyncKeyState(VK_SHIFT)&0x8000)&&!(GetAsyncKeyState(VK_MENU)&0x8000)&&!(GetAsyncKeyState(VK_LWIN)&0x8000)&&!(GetAsyncKeyState(VK_RWIN)&0x8000);}
@@ -127,7 +127,7 @@ void work(){
         while(reader.available() && !stopping){
             std::optional<Choice> request;
             {std::unique_lock<std::mutex> lock(mutex);
-                wake.wait_for(lock,std::chrono::milliseconds(active?130:1800),[&]{return stopping || choice.has_value() || wake_version.load()!=seen;});
+                wake.wait_for(lock,std::chrono::milliseconds(active?90:1800),[&]{return stopping || choice.has_value() || wake_version.load()!=seen;});
                 seen=wake_version.load();if(stopping)break;
                 request=std::move(choice);choice.reset();
             }
@@ -220,16 +220,7 @@ std::vector<int> measure_options(){
     SelectObject(dc,old);ReleaseDC(popup,dc);return widths;
 }
 std::wstring footer(){
-    int missing=0;for(const auto&c:shown.candidates)if(c.senses.empty())++missing;
-    std::wstring text;
-    if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  方向键跨页选词";
-    if(!shown.translation_status.empty()){if(!text.empty())text+=L"    ";text+=shown.translation_status;}
-    else if(missing){if(!text.empty())text+=L"    ";text+=L"整句请先输入完整中文 · 段落可使用翻译框";}
-    if(std::any_of(shown.candidates.begin(),shown.candidates.end(),[](const Candidate&c){return c.reference;})){
-        if(!text.empty())text+=L"    ";
-        text+=L"词组参考";
-    }
-    return text;
+    return page_count()>1?std::to_wstring(page+1)+L" / "+std::to_wstring(page_count()):L"";
 }
 void position_popup(){
     if(!shown.valid()||shown.epoch!=epoch.load()||!same_target(shown)||paused){ShowWindow(popup,SW_HIDE);hits.clear();return;}
@@ -237,10 +228,9 @@ void position_popup(){
     MONITORINFO mi{};mi.cbSize=sizeof(mi);GetMonitorInfoW(monitor,&mi);
     UINT dpi=96,dpi_y=96;GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&dpi,&dpi_y);
     if(scale_dpi!=(int)dpi){scale_dpi=(int)dpi;fonts();}
-    bool missing=false;for(const auto&c:shown.candidates)if(c.senses.empty()||c.reference)missing=true;
     RECT target_bounds{};GetWindowRect(shown.foreground,&target_bounds);
     target_window_width=(int)(target_bounds.right-target_bounds.left);
-    auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,displayed_options,measure_options(),page,missing,target_window_width);
+    auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,displayed_options,measure_options(),page,false,target_window_width);
     if(!layout.capacity){ShowWindow(popup,SW_HIDE);hits.clear();return;}
     page_capacity=layout.capacity;page=layout.page;
     displayed_flow=std::move(layout.flow);
@@ -285,9 +275,11 @@ void render(HDC dc,RECT client){
             DrawTextW(mem,o.text.c_str(),(int)o.text.size(),&english,DT_LEFT|DT_WORDBREAK|DT_EDITCONTROL|DT_END_ELLIPSIS|DT_NOPREFIX);
         }else draw_text(mem,o.text,english,RGB(46,55,123),normal_font);
     }
-    RECT foot{px(16),client.bottom-px(26),client.right-px(12),client.bottom-px(4)};
-    paint_glass(mem,{px(8),client.bottom-px(30),client.right-px(8),client.bottom-px(3)},candidate_opacity,px(8));
-    draw_text(mem,footer(),foot,RGB(67,83,105),small_font);
+    if(page_count()>1){
+        RECT foot{px(16),client.bottom-px(26),client.right-px(12),client.bottom-px(4)};
+        paint_glass(mem,{px(8),client.bottom-px(30),client.right-px(8),client.bottom-px(3)},candidate_opacity,px(8));
+        draw_text(mem,footer(),foot,RGB(67,83,105),small_font);
+    }
     HBRUSH border=CreateSolidBrush(RGB(218,222,237));FrameRect(mem,&client,border);DeleteObject(border);
     BitBlt(dc,0,0,client.right,client.bottom,mem,0,0,SRCCOPY);
     SelectObject(mem,old);DeleteObject(bmp);DeleteDC(mem);
@@ -324,7 +316,7 @@ LRESULT CALLBACK popup_proc(HWND h,UINT m,WPARAM w,LPARAM l){
 }
 HICON make_icon(){return (HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_DEFAULTCOLOR);}
 void document(bool editable){
-    show_document(instance,main_window,folder+(editable?L"\\personal.tsv":L"\\使用说明.md"),editable?L"EnglishAssistant — 个人词表":L"EnglishAssistant — 使用说明",editable,[]{reload_personal=true;notify_worker();});
+    show_document(instance,main_window,folder+(editable?L"\\personal.tsv":L"\\使用说明.md"),editable?L"PinyinShift — 个人词表":L"PinyinShift — 使用说明",editable,[]{reload_personal=true;notify_worker();});
 }
 void menu(){
     epoch.fetch_add(1);shown={};pending_selection.reset();ShowWindow(popup,SW_HIDE);
@@ -423,11 +415,11 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     struct Apartment {HRESULT result=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~Apartment(){if(SUCCEEDED(result))CoUninitialize();}} apartment;
     instance=i;SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     int argc=0;auto args=CommandLineToArgvW(GetCommandLineW(),&argc);
-    for(int a=1;a<argc;a++)if(wcscmp(args[a],L"--quit")==0){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,WM_CLOSE,0,0);LocalFree(args);return 0;}
+    for(int a=1;a<argc;a++)if(wcscmp(args[a],L"--quit")==0){HWND existing=FindWindowW(L"PinyinShift.Tray",nullptr);if(existing)PostMessageW(existing,WM_CLOSE,0,0);LocalFree(args);return 0;}
     int requested_document=0;for(int a=1;a<argc;a++){if(wcscmp(args[a],L"--help")==0)requested_document=1;if(wcscmp(args[a],L"--edit-personal")==0)requested_document=2;if(wcscmp(args[a],L"--translate")==0)requested_document=3;}
-    HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\EnglishAssistant.2026.v1");
+    HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\PinyinShift.2026.v1");
     if(!singleton){LocalFree(args);return 1;}
-    if(GetLastError()==ERROR_ALREADY_EXISTS){if(requested_document){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,DOCUMENT,requested_document-1,0);}else MessageBoxW(nullptr,L"EnglishAssistant 已经运行。请在任务栏托盘找到沃雅妮莎头像。",L"EnglishAssistant",MB_OK|MB_ICONINFORMATION);LocalFree(args);CloseHandle(singleton);return 0;}
+    if(GetLastError()==ERROR_ALREADY_EXISTS){if(requested_document){HWND existing=FindWindowW(L"PinyinShift.Tray",nullptr);if(existing)PostMessageW(existing,DOCUMENT,requested_document-1,0);}else MessageBoxW(nullptr,L"PinyinShift 已经运行。请在任务栏托盘找到沃雅妮沙全身角色图标。",L"PinyinShift",MB_OK|MB_ICONINFORMATION);LocalFree(args);CloseHandle(singleton);return 0;}
     wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);executable_path=path;folder=std::filesystem::path(path).parent_path().wstring();config_path=folder+L"\\settings.ini";
     std::wstring preview_path;
     int preview_width=560;
@@ -437,15 +429,16 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     LocalFree(args);
     CopyFileW((folder+L"\\personal.example.tsv").c_str(),(folder+L"\\personal.tsv").c_str(),TRUE);
     dictionary=std::make_shared<OfflineTranslator>();
-    if(!dictionary->open(folder)){MessageBoxW(nullptr,L"无法读取 data 中的中英、英中词库。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
+    if(!dictionary->open(folder)){MessageBoxW(nullptr,L"无法读取 data 中的中英、英中词库。请保留完整项目目录后运行。",L"PinyinShift",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");fonts();tray_icon=make_icon();
     candidate_opacity=background_opacity(folder,BackgroundKind::Candidates);candidate_background=std::make_unique<Background>();candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));
     if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);candidate_background.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
+    if(!migrate_legacy_startup(executable_path))MessageBoxW(nullptr,L"开机自启动项迁移失败，请在托盘中重新设置。",L"PinyinShift",MB_OK|MB_ICONWARNING);
     if(GetPrivateProfileIntW(L"startup",L"enabled",0,config_path.c_str())!=0)set_startup(executable_path,true);
     WritePrivateProfileStringW(L"network",nullptr,nullptr,config_path.c_str());
-    WNDCLASSW cls{};cls.lpfnWndProc=main_proc;cls.hInstance=i;cls.hIcon=tray_icon;cls.lpszClassName=L"EnglishAssistant.Tray";RegisterClassW(&cls);
-    main_window=CreateWindowExW(WS_EX_TOOLWINDOW,cls.lpszClassName,L"EnglishAssistant",WS_POPUP,0,0,0,0,nullptr,nullptr,i,nullptr);
-    cls.lpfnWndProc=popup_proc;cls.lpszClassName=L"EnglishAssistant.Popup";cls.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClassW(&cls);
+    WNDCLASSW cls{};cls.lpfnWndProc=main_proc;cls.hInstance=i;cls.hIcon=tray_icon;cls.lpszClassName=L"PinyinShift.Tray";RegisterClassW(&cls);
+    main_window=CreateWindowExW(WS_EX_TOOLWINDOW,cls.lpszClassName,L"PinyinShift",WS_POPUP,0,0,0,0,nullptr,nullptr,i,nullptr);
+    cls.lpfnWndProc=popup_proc;cls.lpszClassName=L"PinyinShift.Popup";cls.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClassW(&cls);
     popup=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,cls.lpszClassName,L"英文候选",WS_POPUP,0,0,0,0,main_window,nullptr,i,nullptr);
     if(!main_window||!popup){candidate_background.reset();CloseHandle(singleton);return 1;}
     tray(true);

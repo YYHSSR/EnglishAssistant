@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = 'Stop'
-$source = [Drawing.Image]::FromFile((Join-Path $PSScriptRoot 'vodyanitsa.png'))
+$source = [Drawing.Image]::FromFile((Join-Path $PSScriptRoot 'pinyinshift.png'))
 $images = @()
 foreach ($size in @(16,20,24,32,48,64,128,256)) {
     $bitmap = [Drawing.Bitmap]::new($size,$size)

@@ -72,7 +72,7 @@ void schedule(Box& b){
     ++b.revision;b.state->cancelled=true;b.pending=false;b.scheduled=false;KillTimer(b.window,translate_timer);KillTimer(b.window,idle_timer);
     SetWindowTextW(b.output,L"");SetWindowTextW(b.button,L"复制译文");EnableWindow(b.button,FALSE);auto text=input_text(b);
     if(text.empty()||std::all_of(text.begin(),text.end(),iswspace)){set_status(b,L"输入或粘贴文本后自动翻译");SetTimer(b.window,idle_timer,60000,nullptr);return;}
-    b.scheduled=true;SetTimer(b.window,translate_timer,600,nullptr);set_status(b,L"等待输入结束…");
+    b.scheduled=true;SetTimer(b.window,translate_timer,450,nullptr);set_status(b,L"等待输入结束…");
 }
 void translate(Box& b){
     KillTimer(b.window,translate_timer);b.scheduled=false;
@@ -176,7 +176,7 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
 }
 HWND show_translation_box(HINSTANCE instance,HWND owner,DictionaryProvider provider,const std::wstring& root,bool visible,const std::wstring& appearance_root){
     if(translation_window&&IsWindow(translation_window)){ShowWindow(translation_window,SW_RESTORE);SetForegroundWindow(translation_window);return translation_window;}
-    WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=box_proc;cls.lpszClassName=L"EnglishAssistant.Translation";cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
+    WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=box_proc;cls.lpszClassName=L"PinyinShift.Translation";cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
     auto*b=new Box;b->provider=std::move(provider);b->root=root;b->appearance_root=appearance_root.empty()?root:appearance_root;int dpi=(int)GetDpiForSystem();
     translation_window=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,L"翻译框",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(840,dpi,96),MulDiv(600,dpi,96),owner,nullptr,instance,b);
     if(translation_window&&visible){ShowWindow(translation_window,SW_SHOWNORMAL);SetForegroundWindow(translation_window);SetFocus(b->input);}return translation_window;

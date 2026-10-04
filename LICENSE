@@ -1,9 +1,9 @@
-EnglishAssistant Non-Commercial License 1.0
+PinyinShift Non-Commercial License 1.0
 Copyright (c) 2026 YYHSSR
-SPDX-License-Identifier: LicenseRef-EnglishAssistant-NonCommercial-1.0
+SPDX-License-Identifier: LicenseRef-PinyinShift-NonCommercial-1.0
 
 1. Scope
-This license applies only to the original EnglishAssistant program source,
+This license applies only to the original PinyinShift program source,
 original documentation, local word/phrase supplements and expression templates,
 and the program executable.
 Third-party works listed in THIRD_PARTY.md are excluded and retain their own
@@ -43,4 +43,4 @@ not override third-party licenses or exceptions provided by applicable law.
 未经作者书面许可，不得销售、收费分发、纳入商业产品或提供收费服务。
 青简双向词库及其筛选派生数据、原神角色素材不适用本许可证，各自保留原授权及权利。
 程序按现状提供，不承诺适用性或兼容性。联系方式：
-https://github.com/YYHSSR/EnglishAssistant
+https://github.com/YYHSSR/PinyinShift

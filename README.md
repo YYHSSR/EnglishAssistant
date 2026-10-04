@@ -1,19 +1,19 @@
 <div align="center">
 
-<img src="resources/vodyanitsa.png" width="88" alt="EnglishAssistant 头像" />
+<img src="resources/pinyinshift.png" width="112" alt="PinyinShift · 沃雅妮沙全身角色图标" />
 
-# EnglishAssistant
+# PinyinShift
 
 **继续使用微软拼音，让中文候选直接输出为英文。**
 
 离线英文选词 · 双向自动翻译 · 可自定义背景
 
-![版本](https://img.shields.io/badge/version-0.9.1-527f9c)
+![版本](https://img.shields.io/badge/version-0.9.2-527f9c)
 ![平台](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4)
 ![离线运行](https://img.shields.io/badge/translation-offline-3c887b)
 ![用途](https://img.shields.io/badge/use-non--commercial-967149)
 
-[下载完整 Windows 版](https://github.com/YYHSSR/EnglishAssistant/archive/refs/heads/main.zip) · [快速开始](#快速开始) · [使用说明](使用说明.md) · [许可与来源](#许可与来源)
+[下载完整 Windows 版](https://github.com/YYHSSR/PinyinShift/archive/refs/heads/main.zip) · [快速开始](#快速开始) · [使用说明](使用说明.md) · [许可与来源](#许可与来源)
 
 </div>
 
@@ -43,17 +43,17 @@
 
 **适用于 Windows 10 / 11 x64，搭配微软拼音。**
 
-1. [下载完整项目 ZIP](https://github.com/YYHSSR/EnglishAssistant/archive/refs/heads/main.zip)，解压到自己的文件夹。
-2. 双击根目录 `EnglishAssistant.exe`，任务栏托盘出现头像。
+1. [下载完整项目 ZIP](https://github.com/YYHSSR/PinyinShift/archive/refs/heads/main.zip)，解压到自己的文件夹。
+2. 双击根目录 `PinyinShift.exe`，任务栏托盘出现全身角色图标。
 3. 切到微软拼音中文模式，输入拼音；先不要按空格提交中文。
 4. 查看英文面板，**按住 Ctrl → 按编号 → 松开 Ctrl 输出英文**。
 
 也可以克隆后直接运行：
 
 ```powershell
-git clone https://github.com/YYHSSR/EnglishAssistant.git
-cd EnglishAssistant
-.\EnglishAssistant.exe
+git clone https://github.com/YYHSSR/PinyinShift.git
+cd PinyinShift
+.\PinyinShift.exe
 ```
 
 无需自行安装 Python、配置翻译 API 或准备显卡。模型和运行库随仓库提供，首次翻译从本地压缩包解压运行库，不会联网下载。
@@ -72,7 +72,7 @@ cd EnglishAssistant
 
 按住 Ctrl 时可继续换选，编号保持稳定，无需 Shift。编号以**英文面板**为准，与微软中文候选编号可能不同。
 
-词语优先查本地词库；最长中文候选达到 4 字且未命中时，停顿约 0.35 秒后开始异步模型翻译。模型结果就绪后标为 **整句译文**，排在单词候选之前。推理期间，已有单词释义仍可选择。不完整的词典拼接结果不会进入可输出候选。
+词语优先查本地词库；最长中文候选达到 4 字且未命中时，停顿约 0.22 秒后开始异步模型翻译。模型结果就绪后标为 **整句译文**，排在单词候选之前。推理期间，已有单词释义仍可选择。不完整的词典拼接结果不会进入可输出候选。
 
 例如：
 
@@ -91,7 +91,7 @@ cd EnglishAssistant
 右键托盘 → **翻译框**。
 
 1. 在上框输入或粘贴英文、中文。
-2. 停止输入约 **0.6 秒**，下框自动显示译文；也可按 **Ctrl + Enter** 立即更新。
+2. 停止输入约 **0.45 秒**，下框自动显示译文；也可按 **Ctrl + Enter** 立即更新。
 3. 点击 **复制译文**，或选中所需内容后按 Ctrl + C。
 
 默认按中英文字符比例识别方向。点击 **自动识别方向 ▾**，可以固定为英文 → 中文或中文 → 英文，适合混合语言内容。
@@ -147,7 +147,7 @@ cd EnglishAssistant
 程序使用 C++17、原生 Win32、GDI+ 和 Media Foundation；Python 仅用于独立翻译进程。构建需要 CMake 3.20+、Ninja、MinGW-w64 GCC。
 
 ```powershell
-.\EnglishAssistant.exe --quit
+.\PinyinShift.exe --quit
 .\build.ps1
 ```
 

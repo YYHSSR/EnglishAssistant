@@ -32,7 +32,7 @@ bool save_document(const std::wstring& path,const std::wstring& text){
     return complete;
 }
 namespace {
-constexpr wchar_t document_class[]=L"EnglishAssistant.Document";
+constexpr wchar_t document_class[]=L"PinyinShift.Document";
 struct Document {
     HWND window=nullptr,edit=nullptr,header=nullptr,save=nullptr,status=nullptr;
     HFONT font=nullptr,small=nullptr;
@@ -50,7 +50,7 @@ void layout(Document& d){
 }
 void save(Document& d){
     int n=GetWindowTextLengthW(d.edit);std::wstring text((size_t)n+1,L'\0');GetWindowTextW(d.edit,text.data(),n+1);text.resize(n);
-    if(!save_document(d.path,text)){MessageBoxW(d.window,L"无法保存词表。请检查目录是否可写，或是否已有未完成的 .saving 文件。原文件未被替换。",L"EnglishAssistant",MB_OK|MB_ICONERROR);return;}
+    if(!save_document(d.path,text)){MessageBoxW(d.window,L"无法保存词表。请检查目录是否可写，或是否已有未完成的 .saving 文件。原文件未被替换。",L"PinyinShift",MB_OK|MB_ICONERROR);return;}
     d.dirty=false;SetWindowTextW(d.window,d.title.c_str());SetWindowTextW(d.status,L"已保存并重新加载");if(d.saved)d.saved();
 }
 LRESULT CALLBACK edit_proc(HWND h,UINT m,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data){
@@ -68,7 +68,7 @@ LRESULT CALLBACK document_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         auto instance=(HINSTANCE)GetWindowLongPtrW(h,GWLP_HINSTANCE);
         d->font=CreateFontW(-d->px(15),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,d->editable?L"Consolas":L"Microsoft YaHei UI");
         d->small=CreateFontW(-d->px(13),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");
-        d->header=CreateWindowW(L"STATIC",d->editable?L"中文与英文之间按 Tab 分隔；每行一个词或短句。":L"EnglishAssistant · 微软拼音英文候选助手",WS_CHILD|WS_VISIBLE,0,0,0,0,h,nullptr,instance,nullptr);
+        d->header=CreateWindowW(L"STATIC",d->editable?L"中文与英文之间按 Tab 分隔；每行一个词或短句。":L"PinyinShift · 微软拼音英文候选助手",WS_CHILD|WS_VISIBLE,0,0,0,0,h,nullptr,instance,nullptr);
         DWORD edit_style=WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL|WS_VSCROLL;
         if(d->editable)edit_style|=ES_AUTOHSCROLL|WS_HSCROLL;else edit_style|=ES_READONLY;
         d->edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",edit_style,0,0,0,0,h,(HMENU)101,instance,nullptr);
@@ -89,7 +89,7 @@ LRESULT CALLBACK document_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     }
     if(m==WM_SETFOCUS){SetFocus(d->edit);return 0;}
     if(m==WM_CLOSE){
-        if(d->dirty){int response=MessageBoxW(h,L"保存个人词表的修改吗？",L"EnglishAssistant",MB_YESNOCANCEL|MB_ICONQUESTION);if(response==IDCANCEL)return 0;if(response==IDYES){save(*d);if(d->dirty)return 0;}}
+        if(d->dirty){int response=MessageBoxW(h,L"保存个人词表的修改吗？",L"PinyinShift",MB_YESNOCANCEL|MB_ICONQUESTION);if(response==IDCANCEL)return 0;if(response==IDYES){save(*d);if(d->dirty)return 0;}}
         DestroyWindow(h);return 0;
     }
     if(m==WM_NCDESTROY){windows.erase(d->path);DeleteObject(d->font);DeleteObject(d->small);SetWindowLongPtrW(h,GWLP_USERDATA,0);delete d;}
@@ -99,7 +99,7 @@ LRESULT CALLBACK document_proc(HWND h,UINT m,WPARAM w,LPARAM l){
 HWND show_document(HINSTANCE instance,HWND owner,const std::wstring& path,const std::wstring& title,bool editable,std::function<void()> saved){
     auto existing=windows.find(path);if(existing!=windows.end()&&IsWindow(existing->second)){ShowWindow(existing->second,SW_RESTORE);SetForegroundWindow(existing->second);return existing->second;}
     auto d=std::make_unique<Document>();d->path=path;d->title=title;d->editable=editable;d->saved=std::move(saved);
-    if(!read_document(path,d->text)){MessageBoxW(owner,L"无法读取说明或词表文件。请保留完整项目目录，并使用 UTF-8 文本。",L"EnglishAssistant",MB_OK|MB_ICONERROR);return nullptr;}
+    if(!read_document(path,d->text)){MessageBoxW(owner,L"无法读取说明或词表文件。请保留完整项目目录，并使用 UTF-8 文本。",L"PinyinShift",MB_OK|MB_ICONERROR);return nullptr;}
     WNDCLASSW cls{};cls.lpfnWndProc=document_proc;cls.hInstance=instance;cls.lpszClassName=document_class;cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
     auto*raw=d.release();int dpi=(int)GetDpiForSystem();
     HWND h=CreateWindowExW(WS_EX_APPWINDOW,document_class,title.c_str(),WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(820,dpi,96),MulDiv(600,dpi,96),owner,nullptr,instance,raw);

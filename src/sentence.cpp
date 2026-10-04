@@ -37,7 +37,7 @@ struct SentenceEngine::Impl {
 SentenceEngine::SentenceEngine(std::wstring root,std::function<void()> updated):impl_(std::make_unique<Impl>(std::move(root),std::move(updated))){}
 SentenceEngine::~SentenceEngine()=default;
 void SentenceEngine::select(const std::wstring& text){
-    std::lock_guard<std::mutex> lock(impl_->mutex);if(text==impl_->desired)return;impl_->desired=text;++impl_->generation;impl_->cancelled=true;impl_->due=std::chrono::steady_clock::now()+std::chrono::milliseconds(350);impl_->changed.notify_one();
+    std::lock_guard<std::mutex> lock(impl_->mutex);if(text==impl_->desired)return;impl_->desired=text;++impl_->generation;impl_->cancelled=true;impl_->due=std::chrono::steady_clock::now()+std::chrono::milliseconds(220);impl_->changed.notify_one();
 }
 std::optional<NeuralReply> SentenceEngine::lookup(const std::wstring& text){std::lock_guard<std::mutex> lock(impl_->mutex);auto found=impl_->cache.find(text);if(found==impl_->cache.end())return std::nullopt;return found->second;}
 }

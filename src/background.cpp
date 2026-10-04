@@ -289,9 +289,9 @@ LRESULT CALLBACK settings_proc(HWND h,UINT m,WPARAM w,LPARAM l){
 HWND show_background_settings(HINSTANCE instance,HWND owner,const std::wstring& root,BackgroundKind kind,bool visible){
     if(settings_windows[(int)kind]){if(visible){ShowWindow(settings_windows[(int)kind],SW_RESTORE);SetForegroundWindow(settings_windows[(int)kind]);}return settings_windows[(int)kind];}
     INITCOMMONCONTROLSEX common{sizeof(common),ICC_BAR_CLASSES};InitCommonControlsEx(&common);
-    WNDCLASSW cls{};cls.lpfnWndProc=settings_proc;cls.hInstance=instance;cls.lpszClassName=L"EnglishAssistant.Background";cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
+    WNDCLASSW cls{};cls.lpfnWndProc=settings_proc;cls.hInstance=instance;cls.lpszClassName=L"PinyinShift.Background";cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
     auto* s=new Settings;s->instance=instance;s->owner=owner;s->root=root;s->kind=kind;
-    int dpi=(int)GetDpiForSystem();auto h=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kind==BackgroundKind::Translation?L"EnglishAssistant — 翻译框背景":L"EnglishAssistant — 英文选词框背景",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(660,dpi,96),MulDiv(640,dpi,96),owner,nullptr,instance,s);
+    int dpi=(int)GetDpiForSystem();auto h=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kind==BackgroundKind::Translation?L"PinyinShift — 翻译框背景":L"PinyinShift — 英文选词框背景",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(660,dpi,96),MulDiv(640,dpi,96),owner,nullptr,instance,s);
     settings_windows[(int)kind]=h;if(h&&visible)ShowWindow(h,SW_SHOW);return h;
 }
 void close_background_settings(){for(auto h:settings_windows)if(h)DestroyWindow(h);}

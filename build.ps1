@@ -31,7 +31,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 & ctest --test-dir $buildPath --output-on-failure
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-foreach ($name in @('EnglishAssistant.exe')) {
+foreach ($name in @('PinyinShift.exe')) {
     Copy-Item -LiteralPath (Join-Path $buildPath $name) -Destination (Join-Path $projectRoot $name) -Force
 }
-Write-Host "Ready: $(Join-Path $projectRoot 'EnglishAssistant.exe')"
+Write-Host "Ready: $(Join-Path $projectRoot 'PinyinShift.exe')"
