@@ -210,6 +210,10 @@ std::wstring footer(){
     std::wstring text;
     if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  方向键跨页选词";
     if(missing){if(!text.empty())text+=L"    ";text+=L"部分短句未收录 · 可添加到个人词表";}
+    if(std::any_of(shown.candidates.begin(),shown.candidates.end(),[](const Candidate&c){return c.reference;})){
+        if(!text.empty())text+=L"    ";
+        text+=L"词组参考 · 未知片段已标记";
+    }
     return text;
 }
 void position_popup(){
@@ -218,7 +222,7 @@ void position_popup(){
     MONITORINFO mi{};mi.cbSize=sizeof(mi);GetMonitorInfoW(monitor,&mi);
     UINT dpi=96,dpi_y=96;GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&dpi,&dpi_y);
     if(scale_dpi!=(int)dpi){scale_dpi=(int)dpi;fonts();}
-    bool missing=false;for(const auto&c:shown.candidates)if(c.senses.empty())missing=true;
+    bool missing=false;for(const auto&c:shown.candidates)if(c.senses.empty()||c.reference)missing=true;
     RECT target_bounds{};GetWindowRect(shown.foreground,&target_bounds);
     target_window_width=(int)(target_bounds.right-target_bounds.left);
     auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,displayed_options,measure_options(),page,missing,target_window_width);
@@ -257,8 +261,11 @@ void render(HDC dc,RECT client){
         hits.push_back({card,o.candidate,o.sense});
         RECT badge{card.left+px(3),card.top+px(4),card.left+px(25),card.bottom-px(4)};rounded(mem,badge,selected?RGB(77,87,210):RGB(237,239,252));
         RECT num=badge;num.left+=px(6);draw_text(mem,std::to_wstring(placement.index-page*page_capacity+1),num,selected?RGB(255,255,255):RGB(82,89,186),small_font);
-        RECT english{card.left+px(31),card.top,card.right-px(6),card.bottom};
-        draw_text(mem,o.text,english,RGB(46,55,123),normal_font);
+        RECT english{card.left+px(31),card.top+px(3),card.right-px(6),card.bottom-px(3)};
+        if(card.bottom-card.top>px(30)){
+            SelectObject(mem,normal_font);SetTextColor(mem,RGB(46,55,123));SetBkMode(mem,TRANSPARENT);
+            DrawTextW(mem,o.text.c_str(),(int)o.text.size(),&english,DT_LEFT|DT_WORDBREAK|DT_EDITCONTROL|DT_END_ELLIPSIS|DT_NOPREFIX);
+        }else draw_text(mem,o.text,english,RGB(46,55,123),normal_font);
     }
     RECT foot{px(16),client.bottom-px(26),client.right-px(12),client.bottom-px(4)};
     draw_text(mem,footer(),foot,RGB(121,130,151),small_font);

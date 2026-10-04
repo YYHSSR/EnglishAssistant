@@ -2,7 +2,24 @@
 
 <img src="resources/vodyanitsa.png" width="72" alt="沃雅妮莎头像" />
 
-Windows 微软拼音英文候选助手。继续使用微软自带输入法，在中文候选旁显示英文单词或短句，按住 **Ctrl** 用数字或方向键选择，松开输出英文。
+离线英文候选助手。Windows 搭配微软拼音；Linux 搭配 Ubuntu 原生 IBus 智能拼音（libpinyin）。在中文候选旁显示英文单词或短句，按住 **Ctrl** 用数字或方向键选择，松开输出英文。
+
+## Ubuntu 18.04 及以上
+
+```sh
+git clone https://github.com/YYHSSR/EnglishAssistant.git
+cd EnglishAssistant
+sh ./install.sh
+sh ./start.sh
+```
+
+安装脚本按需通过 apt 安装构建工具和系统 IBus / GTK 依赖，编译共用 C++ 核心、运行测试，并注册当前用户的输入源。随后在系统输入源中选择 **EnglishAssistant 智能拼音**。它调用系统 libpinyin 保留中文候选，在原生 IBus 面板中加入英文。若列表未刷新，注销后重新登录。原有输入源保留，可随时切回。
+
+**Ctrl＋数字 / 方向键** 选择英文，松开输出；普通空格和数字选择中文。同一中文词的英文释义同行排列，长内容换行；Linux 使用原生 IBus 面板与系统主题。
+
+运行 `sh ./start.sh --translate` 打开离线英文转中文翻译框。输入法菜单可打开翻译框、个人词表和使用说明、设置开机自启动。部分 GNOME 桌面不显示旧式托盘图标，可使用输入法菜单或应用列表中的 EnglishAssistant。安装时需要下载系统依赖；日常查词完全离线。移动目录后重新运行 install.sh 更新路径。
+
+支持 Ubuntu 18.04、20.04 及较新版本的 **IBus + libpinyin** 桌面，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
 
 ## 使用
 
@@ -29,7 +46,9 @@ Windows 微软拼音英文候选助手。继续使用微软自带输入法，在
 
 例如“发展”显示 develop、development、growth，保留动词并补充名词。data/supplements.tsv 收录人工整理的常见词补充，与原词库合并并去重；尚未覆盖所有词的词性。可用个人词表指定自己的释义和顺序。
 
-运行时完全离线，不发送输入、不调用翻译 API，没有额度或次数限制。词库不能代替通用翻译模型：未收录且不匹配模板的中文长句不会按单字拼出假译文，可添加到个人词表。
+运行时完全离线，不发送输入、不调用翻译 API，没有额度或次数限制。整句未命中时，按已知词组进行动态规划分词并查词，优先完整覆盖和较长词组，结果排在较短中文候选之前，并标为 **词组参考**。未收录片段显示 `[untranslated: 原文]`，不会悄悄丢掉。截图中的“趋于完美了”对应 **It is approaching perfection.**；其他未收录组合也会调用词库，不必先逐条添加整句。
+
+词库匹配不具备通用翻译模型的语法与上下文能力，词组参考可能不通顺或选错义；可用个人词表覆盖常用整句。打字候选只处理输入法当前提供的、尚未提交的中文，不读取之前已发送的段落。
 
 ## 英文转中文翻译框
 
@@ -41,7 +60,7 @@ Windows 微软拼音英文候选助手。继续使用微软自带输入法，在
 
 ## 构建
 
-C++17、原生 Win32、Windows x64；CMake 3.20+、Ninja、MinGW-w64 GCC。不需要 Python、浏览器或 .NET 服务。
+共用词库核心为 C++17。Windows 使用原生 Win32、CMake 3.20+、Ninja、MinGW-w64 GCC，无需 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.6+、GTK 3、IBus；CMake 3.10 与 Ubuntu 18.04 自带 GCC 7 即可构建，不用 pip。
 
 ```powershell
 .\EnglishAssistant.exe --quit

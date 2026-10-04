@@ -16,6 +16,8 @@
 
 Windows APIs and system DLLs provide the application UI and accessibility interfaces. MinGW-w64 GCC was used to build the Windows binaries, with its standard runtime statically linked; the output imports only Windows system libraries and the Windows Universal C Runtime. The compiler's standard runtime is covered by its respective license and GCC Runtime Library Exception (see the compiler distribution).
 
+Linux uses separately installed distribution packages: IBus (https://github.com/ibus/ibus), ibus-libpinyin (https://github.com/libpinyin/ibus-libpinyin), GTK 3, PyGObject and Python. The adapter invokes the system IBus/libpinyin service through D-Bus; it does not bundle or copy their engine source or binaries. Their original licenses remain applicable to those packages. The adapter and common wordbank core are independently implemented here.
+
 ## Vodyanitsa / 沃雅妮莎 icon
 
 - Game / character: Genshin Impact / Vodyanitsa (沃雅妮莎).

@@ -2,7 +2,7 @@
 import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from core import ROOT, desktop_exec
+from core import ROOT, desktop_exec, autostart, autostart_enabled
 
 data = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share')))
 component = ET.Element('component')
@@ -26,6 +26,8 @@ target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text('[Desktop Entry]\nType=Application\nName=EnglishAssistant\nComment=离线英文候选与英文转中文\nExec=' +
                   desktop_exec('/usr/bin/python3', ROOT / 'linux' / 'app.py', '--translate') +
                   '\nIcon=' + str(ROOT / 'resources' / 'vodyanitsa.png') + '\nTerminal=false\nCategories=Utility;\n', encoding='utf-8')
+if autostart_enabled():
+    autostart(True)
 try:
     from gi.repository import Gio, GLib
     schema = 'org.gnome.desktop.input-sources'

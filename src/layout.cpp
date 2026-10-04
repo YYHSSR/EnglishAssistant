@@ -12,15 +12,19 @@ FlowLayout grouped_flow(const std::vector<EnglishOption>& options,const std::vec
     for(int begin=first;begin<end;){
         int next=begin+1;
         while(next<end&&options[next].candidate==options[begin].candidate)++next;
-        int x=left,y=top+px(24);
+        int x=left,y=top+px(24),row_height=px(30);
         for(int index=begin;index<next;++index){
             int text=index<(int)text_widths.size()?text_widths[index]:0;
             int cell_width=std::clamp(text+px(40),std::min(px(64),right-left),right-left);
-            if(x>left&&x+cell_width>right){x=left;y+=px(34);}
-            flow.cells.push_back({{x,y,x+cell_width,y+px(30)},index});
+            int text_area=std::max(px(16),cell_width-px(40));
+            int lines=std::clamp((text+text_area-1)/text_area,1,6);
+            int cell_height=px(30)+px(22)*(lines-1);
+            if(x>left&&x+cell_width>right){x=left;y+=row_height+px(4);row_height=px(30);}
+            flow.cells.push_back({{x,y,x+cell_width,y+cell_height},index});
+            row_height=std::max(row_height,cell_height);
             x+=cell_width+px(6);
         }
-        int bottom=y+px(36);
+        int bottom=y+row_height+px(6);
         flow.groups.push_back({{px(10),top,width-px(10),bottom},options[begin].word+(options[begin].reference?L" · 词组参考":L"")});
         top=bottom+px(6);begin=next;
     }

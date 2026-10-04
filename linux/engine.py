@@ -10,7 +10,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import gi
 gi.require_version('IBus', '1.0')
-from gi.repository import IBus, Gio, GLib
+from gi.repository import IBus, Gio, GLib, GObject
+
+# Newer libibus only deserializes GTypes that the client has registered.
+for _name in ('Text', 'Attribute', 'AttrList', 'LookupTable', 'Property', 'PropList', 'EngineDesc', 'Component'):
+    GObject.type_ensure(getattr(IBus, _name).__gtype__)
 
 SERVICE = 'org.freedesktop.IBus.Libpinyin'
 INTERFACE = 'org.freedesktop.IBus.Engine'
@@ -81,7 +85,10 @@ class AssistantEngine(IBus.Engine):
     def inner_signal(self, connection, sender, path, interface, signal, parameters):
         try:
             def value(index):
-                return IBus.Serializable.deserialize_object(parameters.get_child_value(index).get_variant())
+                variant = parameters.get_child_value(index).get_variant()
+                if hasattr(IBus.Serializable, 'deserialize_object'):
+                    return IBus.Serializable.deserialize_object(variant)
+                return IBus.serializable_deserialize(variant)
             if signal == 'CommitText':
                 if not self.suppress_commit and self.focused and not self.password:
                     self.commit_text(value(0))
@@ -133,7 +140,8 @@ class AssistantEngine(IBus.Engine):
             return
         begin = (table.get_cursor_pos() // table.get_page_size()) * table.get_page_size()
         entries = [table.get_candidate(i).get_text() for i in range(begin, min(begin + table.get_page_size(), table.get_number_of_candidates()))]
-        entries.sort(key=lambda text: -len(text))
+        if any(len(text) >= 4 for text in entries):
+            entries.sort(key=lambda text: -len(text))
         self.options = []
         for word in entries:
             reply = self.core.query('en', word)

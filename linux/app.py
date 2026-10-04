@@ -123,14 +123,6 @@ class Application:
         window.set_default_size(720, 520)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         window.add(box)
-        tools = Gtk.Box(spacing=6)
-        for label, callback in [('个人词表', lambda: self.show_editor(ROOT / 'personal.tsv', True)),
-                                ('重新加载', self.reload), ('使用说明', lambda: self.show_editor(ROOT / '使用说明.md', False)),
-                                ('开机自启动', self.toggle_startup)]:
-            tool = Gtk.Button(label=label)
-            tool.connect('clicked', lambda _, action=callback: action())
-            tools.pack_start(tool, False, False, 0)
-        box.pack_start(tools, False, False, 0)
         view, scroll = self.text_area(editable)
         view.get_buffer().set_text(path.read_text(encoding='utf-8-sig') if path.exists() else '')
         box.pack_start(scroll, True, True, 0)
@@ -163,6 +155,14 @@ class Application:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_border_width(14)
         window.add(box)
+        tools = Gtk.Box(spacing=6)
+        for label, callback in [('个人词表', lambda: self.show_editor(ROOT / 'personal.tsv', True)),
+                                ('重新加载', self.reload), ('使用说明', lambda: self.show_editor(ROOT / '使用说明.md', False)),
+                                ('开机自启动', self.toggle_startup)]:
+            tool = Gtk.Button(label=label)
+            tool.connect('clicked', lambda _, action=callback: action())
+            tools.pack_start(tool, False, False, 0)
+        box.pack_start(tools, False, False, 0)
         box.pack_start(Gtk.Label(label='粘贴英文 · 完全离线 · Ctrl + Enter 翻译'), False, False, 0)
         source, scroll = self.text_area()
         box.pack_start(scroll, True, True, 0)
