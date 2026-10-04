@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native GTK/IBus desktop entry; compatible with Ubuntu's Python 3.6."""
+"""Native GTK/IBus desktop entry; compatible with Ubuntu 20.04's Python 3.8."""
 import atexit
 import fcntl
 import os

@@ -7,9 +7,10 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
-#include "filesystem_compat.hpp"
+#include <filesystem>
 
 namespace ea {
+namespace fs = std::filesystem;
 std::wstring wide(std::string_view text);
 std::string utf8(std::wstring_view text);
 fs::path native_path(std::wstring_view text);

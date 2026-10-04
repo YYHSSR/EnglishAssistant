@@ -4,7 +4,7 @@
 
 离线英文候选助手。Windows 搭配微软拼音；Linux 搭配 Ubuntu 原生 IBus 智能拼音（libpinyin）。在中文候选旁显示英文单词或短句，按住 **Ctrl** 用数字或方向键选择，松开输出英文。
 
-## Ubuntu 18.04 及以上
+## Ubuntu 20.04 及以上
 
 ```sh
 git clone https://github.com/YYHSSR/EnglishAssistant.git
@@ -19,7 +19,7 @@ sh ./start.sh
 
 运行 `sh ./start.sh --translate` 打开离线英文转中文翻译框。输入法菜单可打开翻译框、个人词表和使用说明、设置开机自启动。部分 GNOME 桌面不显示旧式托盘图标，可使用输入法菜单或应用列表中的 EnglishAssistant。安装时需要下载系统依赖；日常查词完全离线。移动目录后重新运行 install.sh 更新路径。
 
-支持 Ubuntu 18.04、20.04 及较新版本的 **IBus + libpinyin** 桌面，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
+支持 Ubuntu 20.04、20.04 及较新版本的 **IBus + libpinyin** 桌面，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
 
 ## 使用
 
@@ -60,7 +60,7 @@ sh ./start.sh
 
 ## 构建
 
-共用词库核心为 C++17。Windows 使用原生 Win32、CMake 3.20+、Ninja、MinGW-w64 GCC，无需 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.6+、GTK 3、IBus；CMake 3.10 与 Ubuntu 18.04 自带 GCC 7 即可构建，不用 pip。
+共用词库核心为 C++17。Windows 使用原生 Win32、CMake 3.20+、Ninja、MinGW-w64 GCC，无需 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus；CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建，不用 pip。
 
 ```powershell
 .\EnglishAssistant.exe --quit

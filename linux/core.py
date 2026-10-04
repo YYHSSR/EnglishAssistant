@@ -1,4 +1,4 @@
-"""Python 3.6+ client for the shared, persistent C++ wordbank process."""
+"""Python 3.8+ client for the shared, persistent C++ wordbank process."""
 import json
 import os
 import subprocess

@@ -86,9 +86,7 @@ class AssistantEngine(IBus.Engine):
         try:
             def value(index):
                 variant = parameters.get_child_value(index).get_variant()
-                if hasattr(IBus.Serializable, 'deserialize_object'):
-                    return IBus.Serializable.deserialize_object(variant)
-                return IBus.serializable_deserialize(variant)
+                return IBus.Serializable.deserialize_object(variant)
             if signal == 'CommitText':
                 if not self.suppress_commit and self.focused and not self.password:
                     self.commit_text(value(0))
