@@ -1,4 +1,4 @@
-# 由 qingjian-gloss-gen 生成（LLM）。词	[词性. ]译词	[词性. ]译词
+# Filtered from Qingjian c08ae57cb88b6a4a46f4a5e9c1d6d11c5e69222e; GPL-3.0-or-later; tools/import-qingjian.ps1
 㕮	v. chew
 㘎	v. roar
 㙘	adj. beautiful
@@ -1683,14 +1683,12 @@
 七个月	phr. seven months
 七中	n. No.7 Middle School
 七乐彩	n. Seven Colors Lottery
-七二一	n. 721
 七井胡同	n. Qijing Hutong
 七人	n. seven people
 七位	n. seven digits
 七八	num. seven or eight
 七八个	num. seven or eight
 七八十	num. seventy or eighty
-七八年	n. 1978
 七八点	phr. seven or eight o'clock
 七农场	n. Qinongchang
 七分	n. seven tenths
@@ -2332,7 +2330,6 @@
 三七通舒胶囊	n. Sanqi Tongshu capsules
 三万	num. thirty thousand
 三万六千场	phr. thirty-six thousand times
-三三	n. 33
 三三两两	phr. in twos and threes
 三三五五	phr. in groups
 三三制法	n. three-three method
@@ -13081,7 +13078,6 @@
 九九久	n. Jiujiujiu
 九九乘法表	n. multiplication table
 九九归一	phr. in the final analysis
-九二	num. 92
 九二路	n. Jiu'er Road
 九五之尊	n. imperial throne
 九亩村	n. Jiumu Village
@@ -14347,7 +14343,6 @@
 二一添作五	phr. split equally
 二丁	n. 2-chome
 二丁基羟基甲苯	n. butylated hydroxytoluene
-二七	n. 27
 二七三医院	n. 273 Hospital
 二七厂	n. Erqi Factory
 二七广场	n. Erqi Square
@@ -14366,7 +14361,6 @@
 二乙氨基乙醇	n. diethylaminoethanol
 二九零农场	n. Erjiuling Farm
 二二	num. twenty-two
-二五	n. 25
 二五三医院	n. 253 Hospital
 二五眼	adj. inferior
 二井	n. Erjing
@@ -14773,7 +14767,6 @@
 二百亩	n. two hundred mu
 二百八	num. two hundred eight
 二百六	num. two hundred and six
-二百六十	num. 260
 二百强	n. top 200
 二百户	n. two hundred households
 二眼井	n. Eryan Well
@@ -15452,7 +15445,6 @@
 五倍子	n. gallnut
 五元	n. five yuan
 五光十色	adj. multicolored	adj. glittering
-五八八	n. 588
 五公里	phr. five kilometers
 五六	num. five or six
 五六个	num. five or six
@@ -28320,7 +28312,6 @@
 六公主坟	n. Liugongzhufen
 六公园	n. Six Parks
 六六	num. sixty-six
-六六六	n. 666
 六军不发无奈何	phr. army refuses to march
 六农场	n. Six Farm
 六分	n. six points
@@ -155527,7 +155518,6 @@
 百乐眠胶囊	n. Bailemian capsules
 百九	num. one hundred nine
 百九十	num. one hundred ninety
-百九十六	num. 196
 百事	n. Pepsi
 百事可乐	n. Pepsi-Cola
 百事通	n. know-it-all
@@ -155552,7 +155542,6 @@
 百兆网卡	n. 100M network card
 百八	num. one hundred eight
 百八十	num. one hundred eighty
-百六	num. 106
 百六十	num. one hundred sixty
 百兽	n. all beasts
 百分	n. percent

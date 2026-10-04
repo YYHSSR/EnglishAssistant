@@ -2,7 +2,9 @@
 #include "dictionary.hpp"
 #include "options.hpp"
 #include "layout.hpp"
-#include "online.hpp"
+#include "offline.hpp"
+#include "startup.hpp"
+#include "translation_box.hpp"
 #include "documents.hpp"
 #include <shellapi.h>
 #include <windowsx.h>
@@ -32,7 +34,7 @@ HWINEVENTHOOK foreground_hook=nullptr,visibility_hook=nullptr;
 UINT taskbar_created=0;
 HFONT normal_font=nullptr,small_font=nullptr;
 HICON tray_icon=nullptr;
-std::wstring folder,config_path;
+std::wstring folder,config_path,executable_path;
 std::atomic<uint64_t> epoch{1},wake_version{0};
 std::atomic<bool> paused{false},stopping{false};
 std::atomic<bool> reload_personal{false};
@@ -45,7 +47,7 @@ std::vector<Hit> hits;
 Snapshot shown;
 std::vector<EnglishOption> displayed_options;
 FlowLayout displayed_flow;
-Dictionary dictionary;
+std::shared_ptr<OfflineTranslator> dictionary;
 std::thread worker;
 std::mutex mutex;
 std::condition_variable wake;
@@ -53,9 +55,9 @@ Snapshot latest;
 struct Choice { Snapshot snapshot;int number,sense; };
 std::optional<Choice> choice;
 std::optional<Choice> pending_selection;
-std::unique_ptr<OnlineTranslator> online;
 std::ofstream diagnostics;
 
+std::shared_ptr<OfflineTranslator> current_dictionary(){std::lock_guard<std::mutex>lock(mutex);return dictionary;}
 void notify_worker(){wake_version.fetch_add(1,std::memory_order_relaxed);wake.notify_one();}
 int px(int v){return MulDiv(v,scale_dpi,96);}
 void balloon(const wchar_t* message){
@@ -64,7 +66,7 @@ void balloon(const wchar_t* message){
 }
 void tray(bool add){
     NOTIFYICONDATAW n{};n.cbSize=sizeof(n);n.hWnd=main_window;n.uID=1;n.uFlags=NIF_ICON|NIF_TIP|NIF_MESSAGE;n.hIcon=tray_icon;n.uCallbackMessage=TRAY;
-    swprintf_s(n.szTip,L"EnglishAssistant · %s · %zu 条译词",paused?L"已暂停":L"运行中",dictionary.size());
+    swprintf_s(n.szTip,L"EnglishAssistant · %s · %zu 条译词",paused?L"已暂停":L"运行中",current_dictionary()->english_size());
     Shell_NotifyIconW(add?NIM_ADD:NIM_MODIFY,&n);
 }
 bool modifiers_up(){return !(GetAsyncKeyState(VK_CONTROL)&0x8000)&&!(GetAsyncKeyState(VK_SHIFT)&0x8000)&&!(GetAsyncKeyState(VK_MENU)&0x8000)&&!(GetAsyncKeyState(VK_LWIN)&0x8000)&&!(GetAsyncKeyState(VK_RWIN)&0x8000);}
@@ -126,16 +128,14 @@ void work(){
             if(request){
                 auto result=commit(reader,*request);publish({});PostMessageW(main_window,RESULT,result,0);active=false;continue;
             }
-            if(reload_personal.exchange(false)){dictionary.load_personal(folder+L"\\personal.tsv");PostMessageW(main_window,RESULT,Reloaded,0);}
-            if(paused){online->schedule({});if(active)publish({});active=false;continue;}
-            uint64_t version=epoch.load();auto s=reader.read(version);
-            if(version!=epoch.load()||paused){online->schedule({});publish({});active=false;continue;}
-            std::vector<std::wstring> missing;
-            for(auto& c:s.candidates){
-                c.senses=dictionary.lookup(c.word);
-                if(c.senses.empty()&&online->enabled){auto translated=online->lookup(c.word);if(!translated.empty())c.senses.push_back(std::move(translated));else missing.push_back(c.word);}
+            if(reload_personal.exchange(false)){
+                auto replacement=std::make_shared<OfflineTranslator>();
+                if(replacement->open(folder)){std::lock_guard<std::mutex>lock(mutex);dictionary=std::move(replacement);PostMessageW(main_window,RESULT,Reloaded,0);}
             }
-            online->schedule(missing);
+            if(paused){if(active)publish({});active=false;continue;}
+            uint64_t version=epoch.load();auto s=reader.read(version);
+            if(version!=epoch.load()||paused){publish({});active=false;continue;}
+            auto local=current_dictionary();for(auto& c:s.candidates)c.senses=local->to_english(c.word);
             s.time=GetTickCount64();active=s.valid();publish(std::move(s));
         }
     }
@@ -209,7 +209,7 @@ std::wstring footer(){
     int missing=0;for(const auto&c:shown.candidates)if(c.senses.empty())++missing;
     std::wstring text;
     if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  方向键跨页选词";
-    if(missing){if(!text.empty())text+=L"    ";text+=online->enabled?(online->quota_exhausted?L"联网补充暂不可用 · 仍可选择本地译文":L"部分短句暂无译文 · 联网补充已开启"):L"部分短句未收录 · 可在托盘开启联网补充";}
+    if(missing){if(!text.empty())text+=L"    ";text+=L"部分短句未收录 · 可添加到个人词表";}
     return text;
 }
 void position_popup(){
@@ -269,8 +269,9 @@ void render(HDC dc,RECT client){
 void paint(HWND h){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);RECT client;GetClientRect(h,&client);render(dc,client);EndPaint(h,&ps);}
 bool render_preview(const std::wstring& path,int width){
     // Render sample content into a bitmap without opening a window or installing hooks.
-    shown.candidates={{1,L"发展",true,dictionary.lookup(L"发展")},{2,L"罚站",false,dictionary.lookup(L"罚站")},{5,L"发",false,dictionary.lookup(L"发")},{6,L"法",false,dictionary.lookup(L"法")},{7,L"伐",false,dictionary.lookup(L"伐")}};
-    displayed_options=english_options(shown);pending_selection=Choice{shown,1,1};
+    auto local=current_dictionary();
+    shown.candidates={{1,L"托盘中增加一个选项",true,local->to_english(L"托盘中增加一个选项")},{2,L"托盘中",false,local->to_english(L"托盘中")},{3,L"托盘",false,local->to_english(L"托盘")},{4,L"托",false,local->to_english(L"托")}};
+    displayed_options=english_options(shown);pending_selection=Choice{shown,1,0};
     displayed_flow=grouped_flow(displayed_options,measure_options(),0,page_capacity,width,scale_dpi);
     RECT client{0,0,width,displayed_flow.height+8};
     HDC screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=client.right;info.bmiHeader.biHeight=client.bottom;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
@@ -295,20 +296,18 @@ void document(bool editable){
     show_document(instance,main_window,folder+(editable?L"\\personal.tsv":L"\\使用说明.md"),editable?L"EnglishAssistant — 个人词表":L"EnglishAssistant — 使用说明",editable,[]{reload_personal=true;notify_worker();});
 }
 void menu(){
-    epoch.fetch_add(1);shown={};pending_selection.reset();ShowWindow(popup,SW_HIDE);online->schedule({});
+    epoch.fetch_add(1);shown={};pending_selection.reset();ShowWindow(popup,SW_HIDE);
     HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,1,paused?L"恢复英文候选":L"暂停英文候选");
-    AppendMenuW(menu,MF_STRING|(online->enabled?MF_CHECKED:0),9,L"免费联网补充（MyMemory）");
+    AppendMenuW(menu,MF_STRING|(startup_enabled(executable_path)?MF_CHECKED:0),10,L"开机自启动");
+    AppendMenuW(menu,MF_STRING,11,L"英文 → 中文翻译框");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
     AppendMenuW(menu,MF_STRING,4,L"编辑个人词表");AppendMenuW(menu,MF_STRING,5,L"重新加载个人词表");
     AppendMenuW(menu,MF_STRING,7,L"使用说明");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,8,L"退出");
     POINT p;GetCursorPos(&p);SetForegroundWindow(main_window);int cmd=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY|TPM_RIGHTBUTTON,p.x,p.y,0,main_window,nullptr);DestroyMenu(menu);PostMessageW(main_window,WM_NULL,0,0);
     if(cmd==1){paused=!paused;tray(false);notify_worker();}
-    if(cmd==9){
-        bool enable=!online->enabled;
-        if(enable && MessageBoxW(main_window,L"开启后，本地未收录的中文候选短句会发送到 MyMemory（api.mymemory.translated.net）翻译。\n\n匿名免费额度通常为每天 5,000 字符；本程序按每天最多 4,000 字符限制，不配置付费密钥。超限或断网时仍可使用本地词库。\n\n请避免在开启联网时输入敏感内容。要开启吗？",L"免费联网补充",MB_YESNO|MB_ICONINFORMATION)!=IDYES)enable=false;
-        online->set_enabled(enable);WritePrivateProfileStringW(L"network",L"enabled",enable?L"1":L"0",config_path.c_str());notify_worker();
-    }
+    if(cmd==10){bool enable=!startup_enabled(executable_path);if(set_startup(executable_path,enable))WritePrivateProfileStringW(L"startup",L"enabled",enable?L"1":L"0",config_path.c_str());else balloon(L"无法修改当前用户的开机自启动设置。");}
+    if(cmd==11)show_translation_box(instance,main_window,current_dictionary);
     if(cmd==4)document(true);
     if(cmd==5){reload_personal=true;notify_worker();}
     if(cmd==7)document(false);
@@ -321,7 +320,7 @@ bool visual_equal(const Snapshot&a,const Snapshot&b){
     return true;
 }
 LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
-    if(m==DOCUMENT){document(w!=0);return 0;}
+    if(m==DOCUMENT){if(w==2)show_translation_box(instance,main_window,current_dictionary);else document(w!=0);return 0;}
     if(m==taskbar_created && taskbar_created){tray(true);return 0;}
     if(m==UPDATE){Snapshot s;{std::lock_guard<std::mutex> lock(mutex);s=latest;}
         if(s.valid() && (s.epoch!=epoch.load()||paused||committing||!same_target(s)))s={};
@@ -378,6 +377,7 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_QUERYENDSESSION)return TRUE;
     if(m==WM_ENDSESSION&&w){DestroyWindow(h);return 0;}
     if(m==WM_DESTROY){
+        close_translation_box();
         stopping=true;wake.notify_one();
         if(key_hook)UnhookWindowsHookEx(key_hook);
         if(mouse_hook)UnhookWindowsHookEx(mouse_hook);
@@ -392,39 +392,36 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     instance=i;SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     int argc=0;auto args=CommandLineToArgvW(GetCommandLineW(),&argc);
     for(int a=1;a<argc;a++)if(wcscmp(args[a],L"--quit")==0){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,WM_CLOSE,0,0);LocalFree(args);return 0;}
-    int requested_document=0;for(int a=1;a<argc;a++){if(wcscmp(args[a],L"--help")==0)requested_document=1;if(wcscmp(args[a],L"--edit-personal")==0)requested_document=2;}
+    int requested_document=0;for(int a=1;a<argc;a++){if(wcscmp(args[a],L"--help")==0)requested_document=1;if(wcscmp(args[a],L"--edit-personal")==0)requested_document=2;if(wcscmp(args[a],L"--translate")==0)requested_document=3;}
     HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\EnglishAssistant.2026.v1");
     if(!singleton){LocalFree(args);return 1;}
-    if(GetLastError()==ERROR_ALREADY_EXISTS){if(requested_document){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,DOCUMENT,requested_document==2,0);}else MessageBoxW(nullptr,L"EnglishAssistant 已经运行。请在任务栏托盘找到沃雅妮莎头像。",L"EnglishAssistant",MB_OK|MB_ICONINFORMATION);LocalFree(args);CloseHandle(singleton);return 0;}
-    wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);folder=std::filesystem::path(path).parent_path().wstring();config_path=folder+L"\\settings.ini";
+    if(GetLastError()==ERROR_ALREADY_EXISTS){if(requested_document){HWND existing=FindWindowW(L"EnglishAssistant.Tray",nullptr);if(existing)PostMessageW(existing,DOCUMENT,requested_document-1,0);}else MessageBoxW(nullptr,L"EnglishAssistant 已经运行。请在任务栏托盘找到沃雅妮莎头像。",L"EnglishAssistant",MB_OK|MB_ICONINFORMATION);LocalFree(args);CloseHandle(singleton);return 0;}
+    wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);executable_path=path;folder=std::filesystem::path(path).parent_path().wstring();config_path=folder+L"\\settings.ini";
     std::wstring preview_path;
     int preview_width=560;
     for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--render-preview")==0)preview_path=args[a+1];
     for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--preview-width")==0)preview_width=std::clamp(_wtoi(args[a+1]),240,560);
     for(int a=1;a+1<argc;a++)if(wcscmp(args[a],L"--diagnostic")==0)diagnostics.open(std::filesystem::path(args[a+1]),std::ios::trunc);
     LocalFree(args);
-    if(!dictionary.open(folder+L"\\data\\glossary-en.tsv")){MessageBoxW(nullptr,L"无法读取 data\\glossary-en.tsv。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
-    dictionary.load_phrases(folder+L"\\data\\phrases.tsv");
-    dictionary.load_supplements(folder+L"\\data\\supplements.tsv");
     CopyFileW((folder+L"\\personal.example.tsv").c_str(),(folder+L"\\personal.tsv").c_str(),TRUE);
-    dictionary.load_personal(folder+L"\\personal.tsv");
-    std::error_code directory_error;std::filesystem::create_directories(std::filesystem::path(folder)/L"state",directory_error);
-    online=std::make_unique<OnlineTranslator>(folder+L"\\state\\network-state.ini",notify_worker);
-    online->set_enabled(GetPrivateProfileIntW(L"network",L"enabled",0,config_path.c_str())!=0);
+    dictionary=std::make_shared<OfflineTranslator>();
+    if(!dictionary->open(folder)){MessageBoxW(nullptr,L"无法读取 data 中的中英、英中词库。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");fonts();tray_icon=make_icon();
-    if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);online.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
+    if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
+    if(GetPrivateProfileIntW(L"startup",L"enabled",0,config_path.c_str())!=0)set_startup(executable_path,true);
+    WritePrivateProfileStringW(L"network",nullptr,nullptr,config_path.c_str());
     WNDCLASSW cls{};cls.lpfnWndProc=main_proc;cls.hInstance=i;cls.hIcon=tray_icon;cls.lpszClassName=L"EnglishAssistant.Tray";RegisterClassW(&cls);
     main_window=CreateWindowExW(WS_EX_TOOLWINDOW,cls.lpszClassName,L"EnglishAssistant",WS_POPUP,0,0,0,0,nullptr,nullptr,i,nullptr);
     cls.lpfnWndProc=popup_proc;cls.lpszClassName=L"EnglishAssistant.Popup";cls.hCursor=LoadCursor(nullptr,IDC_ARROW);RegisterClassW(&cls);
     popup=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,cls.lpszClassName,L"英文候选",WS_POPUP,0,0,0,0,main_window,nullptr,i,nullptr);
     if(!main_window||!popup){CloseHandle(singleton);return 1;}
     tray(true);
-    if(requested_document)PostMessageW(main_window,DOCUMENT,requested_document==2,0);
+    if(requested_document)PostMessageW(main_window,DOCUMENT,requested_document-1,0);
     key_hook=SetWindowsHookExW(WH_KEYBOARD_LL,keyboard,i,0);
     mouse_hook=SetWindowsHookExW(WH_MOUSE_LL,mouse,i,0);
     foreground_hook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,nullptr,foreground_event,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
     visibility_hook=SetWinEventHook(EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE,nullptr,visibility_event,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
     if(!key_hook||!mouse_hook){balloon(L"输入监听启动失败。请退出后重试。");DestroyWindow(main_window);}else worker=std::thread(work);
     MSG msg{};while(GetMessageW(&msg,nullptr,0,0)>0){TranslateMessage(&msg);DispatchMessageW(&msg);}
-    stopping=true;wake.notify_one();if(worker.joinable())worker.join();online.reset();DestroyWindow(popup);DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return 0;
+    stopping=true;wake.notify_one();if(worker.joinable())worker.join();DestroyWindow(popup);DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return 0;
 }

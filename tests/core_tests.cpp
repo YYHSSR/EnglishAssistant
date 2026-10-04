@@ -1,7 +1,8 @@
 #include "dictionary.hpp"
 #include "candidates.hpp"
 #include "options.hpp"
-#include "online.hpp"
+#include "offline.hpp"
+#include "startup.hpp"
 #include "documents.hpp"
 #include "layout.hpp"
 #include <chrono>
@@ -84,14 +85,18 @@ int main(int argc,char**argv){
         auto small_window=popup_layout({100,800,800,850},{0,0,1920,1080},96,grouped,grouped_widths,0,false,300);
         require(small_window.bounds.right-small_window.bounds.left==288&&small_window.flow.cells[0].bounds.top<small_window.flow.cells[2].bounds.top,"Small target application wraps senses even on a large monitor");
         require(popup_layout({0,500,20,530},{0,0,60,1080},96,grouped,grouped_widths,0,false).capacity==0,"Unusable monitor width never produces invisible selectable cells");
-        require(parse_translation(R"({"responseStatus":200,"responseData":{"translatedText":"Where are you from?"}})").text==L"Where are you from?","Online sentence parses");
-        require(parse_translation(R"({"responseStatus":200,"responseData":{"translatedText":"I&#39;m here &amp; ready."}})").text==L"I'm here & ready.","Online HTML entities decoded");
-        require(parse_translation(R"({"responseStatus":429,"quotaFinished":true})").quota,"Provider quota recognized");
-        require(parse_translation(R"({"responseStatus":400,"responseData":{"translatedText":"SERVICE ERROR"}})").text.empty(),"Service errors cannot become candidates");
-        require(parse_translation("not json").text.empty(),"Invalid JSON rejected");
-        require(parse_translation(R"({"responseStatus":200,"responseData":{"translatedText":"hello\nworld"}})").text.empty(),"Multiline output rejected");
-        require(parse_translation("{\"responseStatus\":200,\"responseData\":{\"translatedText\":\""+utf8(L"未翻译 hello")+"\"}}").text.empty(),"Untranslated Chinese rejected");
-        require(parse_translation(R"({"responseStatus":200,"responseData":{"translatedText":123}})").text.empty(),"Wrong JSON type rejected");
+        snapshot.candidates={{3,L"托盘",false,{L"tray"}},{1,L"托盘中增加一个选项",true,{L"Add an option to the system tray."}},{2,L"托盘中",false,{L"in the system tray"}}};
+        options=english_options(snapshot);
+        require(options[0].candidate==1&&options[1].candidate==2&&options[2].candidate==3,"Complete sentence precedes shorter translated candidates");
+        require(options[0].sense==0&&options[0].text==L"Add an option to the system tray.","Sentence ranking retains native output mapping");
+        require(startup_command(L"E:\\My App\\EnglishAssistant.exe")==L"\"E:\\My App\\EnglishAssistant.exe\"","Startup path with spaces is quoted");
+        std::wstring test_key=L"Software\\EnglishAssistant\\Tests\\Run-"+std::to_wstring(GetCurrentProcessId());
+        require(set_startup(L"E:\\My App\\EnglishAssistant.exe",true,test_key.c_str())&&startup_enabled(L"E:\\My App\\EnglishAssistant.exe",test_key.c_str()),"Enable startup uses test registry only");
+        require(!startup_enabled(L"E:\\Moved\\EnglishAssistant.exe",test_key.c_str()),"Moved executable is not mistaken for existing startup command");
+        require(set_startup(L"E:\\Moved\\EnglishAssistant.exe",true,test_key.c_str())&&startup_enabled(L"E:\\Moved\\EnglishAssistant.exe",test_key.c_str()),"Startup command can update after move");
+        require(set_startup(L"E:\\Moved\\EnglishAssistant.exe",false,test_key.c_str())&&!startup_enabled(L"E:\\Moved\\EnglishAssistant.exe",test_key.c_str()),"Disable removes only own startup entry");
+        require(set_startup(L"E:\\Moved\\EnglishAssistant.exe",false,test_key.c_str()),"Disabling absent startup entry succeeds");
+        RegDeleteKeyW(HKEY_CURRENT_USER,test_key.c_str());
         auto document=std::filesystem::absolute("test-fixtures/document.tsv");std::wstring document_text;
         require(save_document(document.wstring(),L"你好\thello\tHi\r\n"),"Native editor writes UTF-8 atomically");
         require(read_document(document.wstring(),document_text)&&document_text==L"你好\thello\tHi\r\n","Native editor Unicode and tabs round trip");
@@ -102,6 +107,33 @@ int main(int argc,char**argv){
         std::filesystem::remove(document.wstring()+L".saving");
         Dictionary missing;require(!missing.open(L"does-not-exist.tsv"),"Missing glossary reports failure");
         if(argc>1){
+            auto source_data=std::filesystem::path(wide(argv[1])).parent_path();
+            auto offline_root=std::filesystem::absolute("test-fixtures/offline");std::filesystem::create_directories(offline_root/L"data");
+            for(auto name:{L"glossary-en.tsv",L"glossary-zh.tsv",L"phrases.tsv",L"supplements.tsv",L"chat-patterns.tsv"})std::filesystem::copy_file(source_data/name,offline_root/L"data"/name,std::filesystem::copy_options::overwrite_existing);
+            {std::ofstream out{offline_root/L"personal.tsv"};out<<utf8(L"测试工具\tdiagnostic tool\n私有测试\tprivate test\n");}
+            OfflineTranslator offline;require(offline.open(offline_root.wstring()),"Filtered bilingual offline library opens");
+            require(offline.english_size()==232202&&offline.chinese_size()==44190,"Imported bilingual coverage matches screening report");
+            require(offline.to_english(L"托盘中增加一个选项")==std::vector<std::wstring>{L"Add an option to the system tray."},"User screenshot sentence available offline");
+            require(offline.to_english(L"请打开测试工具")==std::vector<std::wstring>{L"Please open diagnostic tool."},"Template uses complete known personal slot");
+            require(offline.to_english(L"请打开完全未收录的超长私有工具").empty(),"Unknown template slot never produces a partial English sentence");
+            require(offline.to_english(L"私有测试")[0]==L"private test","Personal dictionary takes priority in offline translator");
+            auto translated=offline.to_chinese(L"I am in a meeting.");
+            require(translated.exact&&translated.text==L"我正在开会","English chat sentence translates fully offline");
+            translated=offline.to_chinese(L"  I NEED MORE TIME!  ");
+            require(translated.exact&&translated.text==L"我需要更多时间","Case whitespace and terminal punctuation normalized");
+            translated=offline.to_chinese(L"Please open diagnostic tool.");
+            require(translated.exact&&translated.text==L"请打开测试工具","Reverse sentence template uses personal term");
+            translated=offline.to_chinese(L"private test");
+            require(translated.exact&&translated.text==L"私有测试","Personal bilingual entry applies to pasted English");
+            translated=offline.to_chinese(L"development");
+            require(translated.exact&&translated.text.find(L"发展")!=std::wstring::npos,"Qingjian English-to-Chinese noun entry retained");
+            translated=offline.to_chinese(L"I need development.");
+            require(translated.exact&&translated.text==L"我需要发展","Sentence slot selects one meaning rather than joining alternative noun senses");
+            translated=offline.to_chinese(L"Hello zxqvunknownterm!");
+            require(!translated.exact&&translated.unknown==std::vector<std::wstring>{L"zxqvunknownterm"}&&translated.text.find(L"〔未收录：zxqvunknownterm〕")!=std::wstring::npos,"Unknown English is marked and partial result is not a full translation");
+            translated=offline.to_chinese(L"hello\nworld");
+            require(!translated.exact&&translated.text.find(L"\r\n")!=std::wstring::npos,"Reference output retains paragraph boundary");
+            require(offline.to_chinese(L" \r\n ").text.empty(),"Empty input has no invented translation");
             Dictionary full;require(full.open(wide(argv[1])),"Full Qingjian glossary opens");
             full.load_phrases((std::filesystem::path(wide(argv[1])).parent_path()/L"phrases.tsv").wstring());
             require(full.lookup(L"你来自哪里")==std::vector<std::wstring>({L"Where are you from?"}),"Screenshot full sentence translated locally");

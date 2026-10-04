@@ -4,10 +4,11 @@ SPDX-License-Identifier: LicenseRef-EnglishAssistant-NonCommercial-1.0
 
 1. Scope
 This license applies only to the original EnglishAssistant program source,
-original documentation, local word and phrase supplements, and the program executable.
+original documentation, local word/phrase supplements and expression templates,
+and the program executable.
 Third-party works listed in THIRD_PARTY.md are excluded and retain their own
 licenses and rights. In particular, this license does not restrict the Qingjian
-GPL-3.0-or-later glossary, the MIT-licensed JSON library, or HoYoverse assets.
+GPL-3.0-or-later bilingual glossaries and derived data, or HoYoverse assets.
 This project does not grant ownership or sublicense rights in game artwork.
 
 2. Permission
@@ -37,9 +38,9 @@ license grants no rights in trademarks, third-party assets, or patents. It does
 not override third-party licenses or exceptions provided by applicable law.
 
 中文说明（英文条款为准）：
-本项目自编代码、文档、本地词语和短句补充与程序可免费用于非商业用途，允许阅读、
+本项目自编代码、文档、本地词语、短句补充和表达模板与程序可免费用于非商业用途，允许阅读、
 复制、修改和非商业分发；分发须保留许可及署名、标明修改，并沿用本条款。
 未经作者书面许可，不得销售、收费分发、纳入商业产品或提供收费服务。
-青简词库、JSON 库和原神角色素材不适用本许可证，各自保留原授权及权利。
+青简双向词库及其筛选派生数据、原神角色素材不适用本许可证，各自保留原授权及权利。
 程序按现状提供，不承诺适用性或兼容性。联系方式：
 https://github.com/YYHSSR/EnglishAssistant

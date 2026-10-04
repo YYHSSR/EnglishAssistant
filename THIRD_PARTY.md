@@ -1,32 +1,20 @@
 # Third-party material
 
-## Qingjian English glossary
+## Qingjian bilingual glossaries
 
 - Project: 青简 Qingjian, https://github.com/qingjian-team/qingjian
 - Authors: Qingjian contributors / qingjian-team
-- Source file: `assets/glossary/glossary-en.tsv`
+- Source files: `assets/glossary/glossary-en.tsv` and `assets/glossary/glossary-zh.tsv`.
 - Reference revision: `c08ae57cb88b6a4a46f4a5e9c1d6d11c5e69222e` (the repository revision inspected for this work on 2026-10-03).
 - Source documentation: https://github.com/qingjian-team/qingjian/blob/main/assets/glossary/README.md
 - Stated license: GPL-3.0-or-later. The full GPL v3 text is included in `data/LICENSE.GPL-3.0.txt`. This standalone data file retains GPL rights; the project's non-commercial restriction does not apply to it.
-- The source document says the English senses were generated offline using DeepSeek, without third-party dictionary content. The original file is distributed unchanged as `data/glossary-en.tsv`.
+- The source document says the senses were generated offline using an LLM. Both files were imported from a cloned checkout and filtered by `tools/import-qingjian.ps1`; the derived files are `data/glossary-en.tsv` and `data/glossary-zh.tsv`. Empty, duplicate and untranslated senses were removed; no manual semantic validation of the full dataset is claimed. Original revision, SHA-256 values, categories, counts and rules are documented in `data/LIBRARY.md`. Derived data retains GPL-3.0-or-later rights.
 - The source glossary README is preserved as `data/QINGJIAN-GLOSSARY-README.md`.
 - No Qingjian program source, branding, icon or input engine is included in this implementation. The program independently reads an external TSV file; this glossary is not compiled into the executable.
 
 ## Platform and build tools
 
 Windows APIs and system DLLs provide the application UI and accessibility interfaces. MinGW-w64 GCC was used to build the Windows binaries, with its standard runtime statically linked; the output imports only Windows system libraries and the Windows Universal C Runtime. The compiler's standard runtime is covered by its respective license and GCC Runtime Library Exception (see the compiler distribution).
-
-## JSON for Modern C++
-
-- Project: https://github.com/nlohmann/json
-- Version: 3.12.0, unmodified single-header distribution.
-- Author: Niels Lohmann and contributors.
-- License: MIT, included as `third_party/nlohmann/LICENSE.MIT`.
-- Used to parse the optional MyMemory API response.
-
-## Optional translation service
-
-MyMemory is an external service operated by Translated: https://mymemory.translated.net/ . Its free anonymous `/get` endpoint is used only when the user enables network supplementation. Service limits: https://mymemory.translated.net/doc/usagelimits.php . No paid API key, account email, or `/set` contribution endpoint is used. Network results are cached only in memory.
 
 ## Vodyanitsa / 沃雅妮莎 icon
 
