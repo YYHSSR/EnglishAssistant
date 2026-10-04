@@ -6,6 +6,7 @@
 #include <mfreadwrite.h>
 #include <mfplay.h>
 #include <commdlg.h>
+#include <commctrl.h>
 #include <shellapi.h>
 #include <filesystem>
 #include <fstream>
@@ -43,7 +44,7 @@ bool video_file(const std::wstring& path){auto ext=extension(path);return ext==L
 }
 struct Background::Impl {
     std::unique_ptr<Gdiplus::Image> image;
-    std::unique_ptr<Gdiplus::Bitmap> cached;int cached_width=0,cached_height=0;
+    std::unique_ptr<Gdiplus::Bitmap> cached;int cached_width=0,cached_height=0;bool cached_contain=false;
     std::vector<BYTE> frame;UINT width=0,height=0;
     UINT gif_count=0;std::vector<UINT> gif_delays;ULONGLONG gif_start=0;
     std::thread decoder;std::mutex mutex;std::condition_variable wake;
@@ -139,12 +140,17 @@ void Background::visible(bool value){
     if(impl_->audio){if(value){PROPVARIANT zero{};zero.vt=VT_I8;zero.hVal.QuadPart=0;impl_->audio->SetPosition(MFP_POSITIONTYPE_100NS,&zero);impl_->audio->Play();}else impl_->audio->Pause();}
     impl_->wake.notify_all();
 }
-void Background::paint(HDC dc,RECT bounds){
+void Background::paint(HDC dc,RECT bounds,bool contain){
+    if(bounds.right<=bounds.left||bounds.bottom<=bounds.top)return;
     Gdiplus::Graphics graphics(dc);graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    graphics.SetClip(Gdiplus::Rect(bounds.left,bounds.top,bounds.right-bounds.left,bounds.bottom-bounds.top));
     auto draw=[&](Gdiplus::Image& image){
-        float scale=std::max(float(bounds.right-bounds.left)/image.GetWidth(),float(bounds.bottom-bounds.top)/image.GetHeight());
+        float sx=float(bounds.right-bounds.left)/image.GetWidth(),sy=float(bounds.bottom-bounds.top)/image.GetHeight();
+        float scale=contain?std::min(sx,sy):std::max(sx,sy);
         float w=image.GetWidth()*scale,h=image.GetHeight()*scale;
-        graphics.DrawImage(&image,Gdiplus::RectF(float(bounds.right)-w,float(bounds.bottom)-h,w,h));
+        float x=contain?bounds.left+(bounds.right-bounds.left-w)/2:bounds.right-w;
+        float y=contain?bounds.top+(bounds.bottom-bounds.top-h)/2:bounds.bottom-h;
+        graphics.DrawImage(&image,Gdiplus::RectF(x,y,w,h));
     };
     if(impl_->image){
         if(!impl_->gif_delays.empty()){
@@ -155,11 +161,11 @@ void Background::paint(HDC dc,RECT bounds){
         }
         int width=bounds.right-bounds.left,height=bounds.bottom-bounds.top;
         if(impl_->gif_count<=1&&width>0&&height>0){
-            if(!impl_->cached||impl_->cached_width!=width||impl_->cached_height!=height){
-                impl_->cached=std::make_unique<Gdiplus::Bitmap>(width,height,PixelFormat32bppPARGB);impl_->cached_width=width;impl_->cached_height=height;
+            if(!impl_->cached||impl_->cached_width!=width||impl_->cached_height!=height||impl_->cached_contain!=contain){
+                impl_->cached=std::make_unique<Gdiplus::Bitmap>(width,height,PixelFormat32bppPARGB);impl_->cached_width=width;impl_->cached_height=height;impl_->cached_contain=contain;
                 Gdiplus::Graphics cache(impl_->cached.get());cache.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-                float scale=std::max(float(width)/impl_->image->GetWidth(),float(height)/impl_->image->GetHeight());float w=impl_->image->GetWidth()*scale,h=impl_->image->GetHeight()*scale;
-                cache.DrawImage(impl_->image.get(),Gdiplus::RectF(width-w,height-h,w,h));
+                float sx=float(width)/impl_->image->GetWidth(),sy=float(height)/impl_->image->GetHeight();float scale=contain?std::min(sx,sy):std::max(sx,sy);float w=impl_->image->GetWidth()*scale,h=impl_->image->GetHeight()*scale;
+                cache.Clear(Gdiplus::Color(0,0,0,0));cache.DrawImage(impl_->image.get(),Gdiplus::RectF(contain?(width-w)/2:width-w,contain?(height-h)/2:height-h,w,h));
             }
             graphics.DrawImage(impl_->cached.get(),int(bounds.left),int(bounds.top),width,height);
         }else draw(*impl_->image);
@@ -175,14 +181,57 @@ bool Background::sound_playing()const{MFP_MEDIAPLAYER_STATE state=MFP_MEDIAPLAYE
 std::wstring background_path(const std::wstring& root,BackgroundKind kind){
     wchar_t path[32768]{};GetPrivateProfileStringW(section(kind),L"path",L"",path,32768,(root+L"\\settings.ini").c_str());
     auto value=std::filesystem::path(path);
-    if(!value.empty()){if(value.is_relative())value=std::filesystem::path(root)/value;if(std::filesystem::is_regular_file(value))return value.wstring();}
+    if(!value.empty()){if(value.is_relative())value=std::filesystem::path(root)/value;std::error_code error;if(std::filesystem::is_regular_file(value,error))return value.wstring();}
     return root+(kind==BackgroundKind::Translation?L"\\resources\\backgrounds\\moon-garden.png":L"\\resources\\backgrounds\\morning-ripple.png");
 }
 bool background_sound(const std::wstring& root,BackgroundKind kind){return GetPrivateProfileIntW(section(kind),L"sound",0,(root+L"\\settings.ini").c_str())!=0;}
+int background_opacity(const std::wstring& root,BackgroundKind kind){return std::clamp((int)GetPrivateProfileIntW(section(kind),L"opacity",40,(root+L"\\settings.ini").c_str()),0,100);}
+void paint_glass(HDC dc,RECT r,int opacity,int radius){
+    runtime();if(r.right<=r.left||r.bottom<=r.top||opacity<=0)return;
+    Gdiplus::Graphics g(dc);g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);Gdiplus::SolidBrush brush(Gdiplus::Color(BYTE(std::clamp(opacity,0,100)*255/100),255,255,255));
+    int d=std::max(1,std::min({radius*2,(int)(r.right-r.left),(int)(r.bottom-r.top)}));Gdiplus::GraphicsPath path;
+    path.AddArc(r.left,r.top,d,d,180,90);path.AddArc(r.right-d,r.top,d,d,270,90);path.AddArc(r.right-d,r.bottom-d,d,d,0,90);path.AddArc(r.left,r.bottom-d,d,d,90,90);path.CloseFigure();g.FillPath(&brush,&path);
+}
 namespace {
 HWND settings_windows[2]{};
-struct Settings {HWND window=nullptr,owner=nullptr,label=nullptr,sound=nullptr;HINSTANCE instance=nullptr;std::wstring root;BackgroundKind kind;Background preview;};
-void update(Settings& s){s.preview.load(background_path(s.root,s.kind),false);s.preview.visible(true);SendMessageW(s.sound,BM_SETCHECK,background_sound(s.root,s.kind)?BST_CHECKED:BST_UNCHECKED,0);SetWindowTextW(s.label,(L"当前："+std::filesystem::path(background_path(s.root,s.kind)).filename().wstring()).c_str());InvalidateRect(s.window,nullptr,TRUE);PostMessageW(s.owner,background_changed,(WPARAM)s.kind,0);}
+struct Settings {
+    HWND window=nullptr,owner=nullptr,label=nullptr,sound=nullptr,slider=nullptr,value=nullptr,hint=nullptr;
+    HINSTANCE instance=nullptr;HFONT font=nullptr;HBRUSH paper=nullptr;int dpi=96,opacity=40;
+    RECT preview_area{};std::wstring root,last_error;BackgroundKind kind;Background preview;
+    int px(int n)const{return MulDiv(n,dpi,96);}
+};
+void set_value(Settings& s){SetWindowTextW(s.value,(L"文字区域白底："+std::to_wstring(s.opacity)+L"%    0% 透明 · 100% 不透明").c_str());}
+void settings_layout(Settings& s){
+    RECT r{};GetClientRect(s.window,&r);int margin=s.px(20),width=r.right-2*margin;
+    s.preview_area={margin,s.px(48),r.right-margin,r.bottom-s.px(172)};
+    MoveWindow(s.hint,margin,s.px(12),width,s.px(26),FALSE);
+    MoveWindow(s.label,margin,r.bottom-s.px(160),width,s.px(22),FALSE);
+    MoveWindow(s.value,margin,r.bottom-s.px(130),width,s.px(24),FALSE);
+    MoveWindow(s.slider,margin,r.bottom-s.px(100),width,s.px(32),FALSE);
+    MoveWindow(GetDlgItem(s.window,301),margin,r.bottom-s.px(52),s.px(154),s.px(32),FALSE);
+    MoveWindow(GetDlgItem(s.window,302),margin+s.px(166),r.bottom-s.px(52),s.px(150),s.px(32),FALSE);
+    MoveWindow(s.sound,margin+s.px(332),r.bottom-s.px(50),std::max(s.px(130),width-s.px(332)),s.px(28),FALSE);
+    RedrawWindow(s.window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
+}
+void update(Settings& s,bool notify=true){
+    s.last_error.clear();s.preview.load(background_path(s.root,s.kind),false);s.preview.visible(IsWindowVisible(s.window));
+    KillTimer(s.window,1);if(IsWindowVisible(s.window)&&s.preview.animated())SetTimer(s.window,1,67,nullptr);
+    SendMessageW(s.sound,BM_SETCHECK,background_sound(s.root,s.kind)?BST_CHECKED:BST_UNCHECKED,0);
+    s.opacity=background_opacity(s.root,s.kind);SendMessageW(s.slider,TBM_SETPOS,TRUE,s.opacity);set_value(s);
+    SetWindowTextW(s.label,(L"当前："+std::filesystem::path(background_path(s.root,s.kind)).filename().wstring()).c_str());
+    InvalidateRect(s.window,nullptr,FALSE);if(notify&&s.owner)PostMessageW(s.owner,background_changed,(WPARAM)s.kind,0);
+}
+void settings_paint(Settings& s,HDC target){
+    RECT r{};GetClientRect(s.window,&r);if(r.right<=0||r.bottom<=0)return;
+    auto dc=CreateCompatibleDC(target);auto bmp=CreateCompatibleBitmap(target,r.right,r.bottom);auto old=SelectObject(dc,bmp);
+    FillRect(dc,&r,s.paper);HBRUSH preview_paper=CreateSolidBrush(RGB(221,234,236));FillRect(dc,&s.preview_area,preview_paper);DeleteObject(preview_paper);
+    s.preview.paint(dc,s.preview_area,true);
+    // A compact sample demonstrates the panel opacity without cropping the artwork.
+    auto sample=s.preview_area;sample.left+=s.px(14);sample.top=sample.bottom-s.px(60);sample.right=std::min(sample.right-s.px(14),sample.left+s.px(280));sample.bottom-=s.px(14);
+    paint_glass(dc,sample,s.opacity,s.px(8));auto previous=SelectObject(dc,s.font);SetBkMode(dc,TRANSPARENT);SetTextColor(dc,RGB(29,63,76));sample.left+=s.px(12);
+    DrawTextW(dc,s.kind==BackgroundKind::Translation?L"示例译文 · 月色落在水面上":L"1 develop   2 development",-1,&sample,DT_SINGLELINE|DT_VCENTER|DT_END_ELLIPSIS);SelectObject(dc,previous);
+    BitBlt(target,0,0,r.right,r.bottom,dc,0,0,SRCCOPY);SelectObject(dc,old);DeleteObject(bmp);DeleteDC(dc);
+}
 void choose(Settings& s,const std::wstring& source){
     auto ext=extension(source);
     if(ext!=L".png"&&ext!=L".jpg"&&ext!=L".jpeg"&&ext!=L".bmp"&&ext!=L".gif"&&!video_file(source)){MessageBoxW(s.window,L"请选择 PNG/JPG/BMP/GIF 图片或 MP4/WMV/MOV/AVI 视频。",L"背景格式",MB_OK);return;}
@@ -198,35 +247,47 @@ LRESULT CALLBACK settings_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_NCCREATE){s=(Settings*)((CREATESTRUCTW*)l)->lpCreateParams;s->window=h;SetWindowLongPtrW(h,GWLP_USERDATA,(LONG_PTR)s);}
     if(!s)return DefWindowProcW(h,m,w,l);
     if(m==WM_CREATE){
-        auto create=[&](const wchar_t* cls,const wchar_t* text,int id,int x,int y,int width,int height,DWORD extra=0){auto child=CreateWindowW(cls,text,WS_CHILD|WS_VISIBLE|extra,x,y,width,height,h,(HMENU)(INT_PTR)id,s->instance,nullptr);SendMessageW(child,WM_SETFONT,(WPARAM)GetStockObject(DEFAULT_GUI_FONT),TRUE);return child;};
-        create(L"STATIC",L"拖入背景文件，或点击选择。图片 / GIF / 视频均可。",0,20,14,540,24);
-        s->label=create(L"STATIC",L"",0,20,270,540,24);
-        create(L"BUTTON",L"选择图片 / 视频",301,20,310,155,34,WS_TABSTOP);
-        create(L"BUTTON",L"恢复默认背景",302,190,310,155,34,WS_TABSTOP);
-        s->sound=create(L"BUTTON",L"播放视频声音",303,370,315,165,26,BS_AUTOCHECKBOX|WS_TABSTOP);
-        DragAcceptFiles(h,TRUE);SetTimer(h,1,67,nullptr);update(*s);return 0;
+        s->dpi=(int)GetDpiForWindow(h);s->paper=CreateSolidBrush(RGB(244,249,249));s->font=CreateFontW(-s->px(13),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");
+        auto create=[&](const wchar_t* cls,const wchar_t* text,int id,DWORD extra=0){auto child=CreateWindowW(cls,text,WS_CHILD|WS_VISIBLE|extra,0,0,0,0,h,(HMENU)(INT_PTR)id,s->instance,nullptr);SendMessageW(child,WM_SETFONT,(WPARAM)s->font,TRUE);return child;};
+        s->hint=create(L"STATIC",L"拖入图片 / GIF / 视频 · 完整预览，实际窗口按比例铺满",0);
+        s->label=create(L"STATIC",L"",0);s->value=create(L"STATIC",L"",305);
+        create(L"BUTTON",L"选择图片 / 视频",301,WS_TABSTOP);create(L"BUTTON",L"恢复默认背景",302,WS_TABSTOP);
+        s->sound=create(L"BUTTON",L"播放视频声音",303,BS_AUTOCHECKBOX|WS_TABSTOP);
+        s->slider=create(TRACKBAR_CLASSW,L"",304,WS_TABSTOP|TBS_HORZ|TBS_AUTOTICKS);
+        SendMessageW(s->slider,TBM_SETRANGE,TRUE,MAKELPARAM(0,100));SendMessageW(s->slider,TBM_SETTICFREQ,10,0);SendMessageW(s->slider,TBM_SETPAGESIZE,0,10);
+        DragAcceptFiles(h,TRUE);settings_layout(*s);update(*s,false);return 0;
     }
     if(m==WM_COMMAND){auto id=LOWORD(w);
         if(id==301){wchar_t path[32768]{};OPENFILENAMEW file{};file.lStructSize=sizeof(file);file.hwndOwner=h;file.lpstrFilter=L"背景媒体\0*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.mp4;*.wmv;*.m4v;*.mov;*.avi\0所有文件\0*.*\0";file.lpstrFile=path;file.nMaxFile=32768;file.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;if(GetOpenFileNameW(&file))choose(*s,path);}
         if(id==302){WritePrivateProfileStringW(section(s->kind),L"path",nullptr,(s->root+L"\\settings.ini").c_str());update(*s);}
-        if(id==303){WritePrivateProfileStringW(section(s->kind),L"sound",SendMessageW(s->sound,BM_GETCHECK,0,0)==BST_CHECKED?L"1":L"0",(s->root+L"\\settings.ini").c_str());update(*s);}
+        if(id==303){WritePrivateProfileStringW(section(s->kind),L"sound",SendMessageW(s->sound,BM_GETCHECK,0,0)==BST_CHECKED?L"1":L"0",(s->root+L"\\settings.ini").c_str());if(s->owner)PostMessageW(s->owner,background_changed,(WPARAM)s->kind,0);}
         return 0;
     }
+    if(m==WM_HSCROLL&&(HWND)l==s->slider){
+        int opacity=(int)SendMessageW(s->slider,TBM_GETPOS,0,0);if(opacity!=s->opacity){s->opacity=opacity;set_value(*s);WritePrivateProfileStringW(section(s->kind),L"opacity",std::to_wstring(opacity).c_str(),(s->root+L"\\settings.ini").c_str());InvalidateRect(h,&s->preview_area,FALSE);if(s->owner)PostMessageW(s->owner,background_changed,(WPARAM)s->kind,1);}return 0;
+    }
+    if(m==WM_SIZE){settings_layout(*s);bool visible=w!=SIZE_MINIMIZED&&IsWindowVisible(h);s->preview.visible(visible);KillTimer(h,1);if(visible&&s->preview.animated())SetTimer(h,1,67,nullptr);return 0;}
+    if(m==WM_SHOWWINDOW){s->preview.visible(w!=0);KillTimer(h,1);if(w&&s->preview.animated())SetTimer(h,1,67,nullptr);}
+    if(m==WM_GETMINMAXINFO){((MINMAXINFO*)l)->ptMinTrackSize={s->px(580),s->px(500)};return 0;}
+    if(m==WM_DPICHANGED){s->dpi=HIWORD(w);auto font=CreateFontW(-s->px(13),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");for(auto child=GetWindow(h,GW_CHILD);child;child=GetWindow(child,GW_HWNDNEXT))SendMessageW(child,WM_SETFONT,(WPARAM)font,FALSE);DeleteObject(s->font);s->font=font;auto* r=(RECT*)l;SetWindowPos(h,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);settings_layout(*s);return 0;}
     if(m==WM_DROPFILES){wchar_t path[32768]{};DragQueryFileW((HDROP)w,0,path,32768);DragFinish((HDROP)w);choose(*s,path);return 0;}
-    if(m==WM_TIMER){RECT region{20,48,560,256};InvalidateRect(h,&region,FALSE);auto error=s->preview.error();if(!error.empty())SetWindowTextW(s->label,error.c_str());return 0;}
-    if(m==WM_PAINT){PAINTSTRUCT paint;auto dc=BeginPaint(h,&paint);RECT area{20,48,560,256};FillRect(dc,&area,(HBRUSH)(COLOR_WINDOW+1));s->preview.paint(dc,area);EndPaint(h,&paint);return 0;}
+    if(m==WM_TIMER){InvalidateRect(h,&s->preview_area,FALSE);auto error=s->preview.error();if(!error.empty()&&error!=s->last_error){s->last_error=error;SetWindowTextW(s->label,error.c_str());}return 0;}
+    if(m==WM_ERASEBKGND)return 1;
+    if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLORBTN){SetBkMode((HDC)w,TRANSPARENT);SetTextColor((HDC)w,RGB(38,68,84));return (LRESULT)s->paper;}
+    if(m==WM_PAINT||m==WM_PRINTCLIENT){PAINTSTRUCT paint{};auto dc=m==WM_PAINT?BeginPaint(h,&paint):(HDC)w;settings_paint(*s,dc);if(m==WM_PAINT)EndPaint(h,&paint);return 0;}
     if(m==WM_CLOSE){DestroyWindow(h);return 0;}
     if(m==WM_DESTROY){KillTimer(h,1);s->preview.visible(false);settings_windows[(int)s->kind]=nullptr;return 0;}
-    if(m==WM_NCDESTROY){SetWindowLongPtrW(h,GWLP_USERDATA,0);delete s;return DefWindowProcW(h,m,w,l);}
+    if(m==WM_NCDESTROY){DeleteObject(s->font);DeleteObject(s->paper);SetWindowLongPtrW(h,GWLP_USERDATA,0);delete s;return DefWindowProcW(h,m,w,l);}
     return DefWindowProcW(h,m,w,l);
 }
 }
-void show_background_settings(HINSTANCE instance,HWND owner,const std::wstring& root,BackgroundKind kind){
-    if(settings_windows[(int)kind]){SetForegroundWindow(settings_windows[(int)kind]);return;}
-    WNDCLASSW cls{};cls.lpfnWndProc=settings_proc;cls.hInstance=instance;cls.lpszClassName=L"EnglishAssistant.Background";cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);RegisterClassW(&cls);
+HWND show_background_settings(HINSTANCE instance,HWND owner,const std::wstring& root,BackgroundKind kind,bool visible){
+    if(settings_windows[(int)kind]){if(visible){ShowWindow(settings_windows[(int)kind],SW_RESTORE);SetForegroundWindow(settings_windows[(int)kind]);}return settings_windows[(int)kind];}
+    INITCOMMONCONTROLSEX common{sizeof(common),ICC_BAR_CLASSES};InitCommonControlsEx(&common);
+    WNDCLASSW cls{};cls.lpfnWndProc=settings_proc;cls.hInstance=instance;cls.lpszClassName=L"EnglishAssistant.Background";cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
     auto* s=new Settings;s->instance=instance;s->owner=owner;s->root=root;s->kind=kind;
-    auto h=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kind==BackgroundKind::Translation?L"EnglishAssistant — 翻译框背景":L"EnglishAssistant — 英文选词框背景",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU, CW_USEDEFAULT,CW_USEDEFAULT,600,400,owner,nullptr,instance,s);
-    settings_windows[(int)kind]=h;ShowWindow(h,SW_SHOW);
+    int dpi=(int)GetDpiForSystem();auto h=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kind==BackgroundKind::Translation?L"EnglishAssistant — 翻译框背景":L"EnglishAssistant — 英文选词框背景",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(660,dpi,96),MulDiv(640,dpi,96),owner,nullptr,instance,s);
+    settings_windows[(int)kind]=h;if(h&&visible)ShowWindow(h,SW_SHOW);return h;
 }
 void close_background_settings(){for(auto h:settings_windows)if(h)DestroyWindow(h);}
 }

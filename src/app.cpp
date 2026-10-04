@@ -38,6 +38,7 @@ HFONT normal_font=nullptr,small_font=nullptr;
 HICON tray_icon=nullptr;
 std::wstring folder,config_path,executable_path;
 std::unique_ptr<Background> candidate_background;
+int candidate_opacity=40;
 std::atomic<uint64_t> epoch{1},wake_version{0};
 std::atomic<bool> paused{false},stopping{false};
 std::atomic<bool> reload_personal{false};
@@ -249,20 +250,21 @@ void render(HDC dc,RECT client){
     HDC mem=CreateCompatibleDC(dc);HBITMAP bmp=CreateCompatibleBitmap(dc,client.right,client.bottom);auto old=SelectObject(mem,bmp);
     HBRUSH bg=CreateSolidBrush(RGB(249,250,254));FillRect(mem,&client,bg);DeleteObject(bg);
     if(candidate_background)candidate_background->paint(mem,client);
-    DrawIconEx(mem,px(14),px(12),tray_icon,px(20),px(20),0,nullptr,DI_NORMAL);
     RECT title{px(42),px(8),client.right-px(12),px(35)};
+    paint_glass(mem,{px(8),px(6),client.right-px(8),px(37)},candidate_opacity,px(8));
+    DrawIconEx(mem,px(14),px(12),tray_icon,px(20),px(20),0,nullptr,DI_NORMAL);
     draw_text(mem,L"英文  ·  Ctrl + 数字 / 方向键，松开输出",title,RGB(85,92,112),small_font);
     hits.clear();
     for(const auto&group:displayed_flow.groups){
-        rounded(mem,group.bounds,RGB(255,255,255));
+        paint_glass(mem,group.bounds,candidate_opacity,px(8));
         RECT chinese{group.bounds.left+px(10),group.bounds.top+px(2),group.bounds.right-px(10),group.bounds.top+px(22)};
-        draw_text(mem,group.word,chinese,RGB(139,145,162),small_font);
+        draw_text(mem,group.word,chinese,RGB(66,84,103),small_font);
     }
     for(size_t cell=0;cell<displayed_flow.cells.size();++cell){
         const auto&placement=displayed_flow.cells[cell];const auto&o=displayed_options[placement.index];
         const auto&card=placement.bounds;
         bool selected=pending_selection&&pending_selection->number==o.candidate&&pending_selection->sense==o.sense;
-        rounded(mem,card,selected?RGB(221,227,254):(hover==(int)cell?RGB(237,240,255):RGB(255,255,255)),selected?245:115);
+        if(selected||hover==(int)cell)rounded(mem,card,selected?RGB(221,227,254):RGB(237,240,255),selected?235:170);
         hits.push_back({card,o.candidate,o.sense});
         RECT badge{card.left+px(3),card.top+px(4),card.left+px(25),card.bottom-px(4)};rounded(mem,badge,selected?RGB(77,87,210):RGB(237,239,252));
         RECT num=badge;num.left+=px(6);draw_text(mem,std::to_wstring(placement.index-page*page_capacity+1),num,selected?RGB(255,255,255):RGB(82,89,186),small_font);
@@ -273,7 +275,8 @@ void render(HDC dc,RECT client){
         }else draw_text(mem,o.text,english,RGB(46,55,123),normal_font);
     }
     RECT foot{px(16),client.bottom-px(26),client.right-px(12),client.bottom-px(4)};
-    draw_text(mem,footer(),foot,RGB(121,130,151),small_font);
+    paint_glass(mem,{px(8),client.bottom-px(30),client.right-px(8),client.bottom-px(3)},candidate_opacity,px(8));
+    draw_text(mem,footer(),foot,RGB(67,83,105),small_font);
     HBRUSH border=CreateSolidBrush(RGB(218,222,237));FrameRect(mem,&client,border);DeleteObject(border);
     BitBlt(dc,0,0,client.right,client.bottom,mem,0,0,SRCCOPY);
     SelectObject(mem,old);DeleteObject(bmp);DeleteDC(mem);
@@ -332,7 +335,7 @@ bool visual_equal(const Snapshot&a,const Snapshot&b){
 }
 LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==DOCUMENT){if(w==2)show_translation_box(instance,main_window,current_dictionary,folder);else document(w!=0);return 0;}
-    if(m==background_changed){if((BackgroundKind)w==BackgroundKind::Translation)reload_translation_background();else{candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));candidate_background->visible(IsWindowVisible(popup));InvalidateRect(popup,nullptr,FALSE);}return 0;}
+    if(m==background_changed){if((BackgroundKind)w==BackgroundKind::Translation)reload_translation_background(l==0);else{candidate_opacity=background_opacity(folder,BackgroundKind::Candidates);if(l==0){candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));candidate_background->visible(IsWindowVisible(popup));KillTimer(popup,1);if(IsWindowVisible(popup)&&candidate_background->animated())SetTimer(popup,1,67,nullptr);}InvalidateRect(popup,nullptr,FALSE);}return 0;}
     if(m==taskbar_created && taskbar_created){tray(true);return 0;}
     if(m==UPDATE){Snapshot s;{std::lock_guard<std::mutex> lock(mutex);s=latest;}
         if(s.valid() && (s.epoch!=epoch.load()||paused||committing||!same_target(s)))s={};
@@ -421,7 +424,7 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     dictionary=std::make_shared<OfflineTranslator>();
     if(!dictionary->open(folder)){MessageBoxW(nullptr,L"无法读取 data 中的中英、英中词库。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
     taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");fonts();tray_icon=make_icon();
-    candidate_background=std::make_unique<Background>();candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));
+    candidate_opacity=background_opacity(folder,BackgroundKind::Candidates);candidate_background=std::make_unique<Background>();candidate_background->load(background_path(folder,BackgroundKind::Candidates),background_sound(folder,BackgroundKind::Candidates));
     if(!preview_path.empty()){bool ok=render_preview(preview_path,preview_width);candidate_background.reset();DeleteObject(normal_font);DeleteObject(small_font);DestroyIcon(tray_icon);CloseHandle(singleton);return ok?0:1;}
     if(GetPrivateProfileIntW(L"startup",L"enabled",0,config_path.c_str())!=0)set_startup(executable_path,true);
     WritePrivateProfileStringW(L"network",nullptr,nullptr,config_path.c_str());
