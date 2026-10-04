@@ -15,3 +15,5 @@
 *.a
 *.pdb
 *.dll
+__pycache__/
+*.pyc

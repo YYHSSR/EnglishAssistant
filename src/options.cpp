@@ -9,7 +9,7 @@ std::vector<EnglishOption> english_options(const Snapshot& s){
         std::stable_sort(ordered.begin(),ordered.end(),[](const Candidate*a,const Candidate*b){return a->word.size()>b->word.size();});
     for(const auto*item:ordered){const auto&candidate=*item;
         for(size_t sense=0;sense<candidate.senses.size();++sense)
-            options.push_back({candidate.number,(int)sense,candidate.word,candidate.senses[sense]});
+            options.push_back({candidate.number,(int)sense,candidate.word,candidate.senses[sense],candidate.reference});
     }
     return options;
 }

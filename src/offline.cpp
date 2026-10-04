@@ -21,11 +21,13 @@ void OfflineTranslator::add_reverse_phrases(const std::filesystem::path& path){
     }
 }
 bool OfflineTranslator::open(const std::wstring& folder){
-    auto root=std::filesystem::path(folder);
-    if(!forward_.open((root/L"data/glossary-en.tsv").wstring())||!reverse_.open((root/L"data/glossary-zh.tsv").wstring()))return false;
-    forward_.load_phrases((root/L"data/phrases.tsv").wstring());forward_.load_supplements((root/L"data/supplements.tsv").wstring());forward_.load_personal((root/L"personal.tsv").wstring());
-    add_reverse_phrases(root/L"data/phrases.tsv");add_reverse_phrases(root/L"personal.tsv");
-    std::ifstream in{root/L"data/chat-patterns.tsv"};std::string line;
+    patterns_.clear();reverse_phrases_.clear();
+    auto root=native_path(folder);
+    auto path=[&](const char* file){return wide((root/file).u8string());};
+    if(!forward_.open(path("data/glossary-en.tsv"))||!reverse_.open(path("data/glossary-zh.tsv")))return false;
+    forward_.load_phrases(path("data/phrases.tsv"));forward_.load_supplements(path("data/supplements.tsv"));forward_.load_personal(path("personal.tsv"));
+    add_reverse_phrases(root/"data/phrases.tsv");add_reverse_phrases(root/"personal.tsv");
+    std::ifstream in{root/"data/chat-patterns.tsv"};std::string line;
     while(std::getline(in,line)){
         if(line.empty()||line[0]=='#')continue;
         auto tab=line.find('\t');if(tab==std::string::npos)continue;
@@ -45,6 +47,50 @@ std::vector<std::wstring> OfflineTranslator::to_english(const std::wstring& text
     auto exact=forward_.lookup(text);if(!exact.empty())return exact;
     for(const auto&pattern:patterns_){auto value=slot(text,pattern.chinese);if(value.empty())continue;auto translated=forward_.lookup(value);if(!translated.empty())return {fill(pattern.english,translated[0])};}
     return {};
+}
+ForwardReply OfflineTranslator::translate_to_english(const std::wstring& text)const{
+    ForwardReply reply;
+    if(text.empty()||text.size()>8000||std::all_of(text.begin(),text.end(),[](wchar_t c){return iswspace(c);}))return reply;
+    reply.senses=to_english(text);if(!reply.senses.empty())return reply;
+    auto normalized=normalize(text);reply.senses=to_english(normalized);
+    if(!reply.senses.empty())return reply;
+    auto chinese=[](wchar_t c){return (c>=0x3400&&c<=0x9fff)||(c>=0xf900&&c<=0xfaff);};
+    std::wstring output;
+    auto append=[&](const std::wstring& value){if(value.empty())return;if(!output.empty()&&output.back()!=L'\n'&&output.back()!=L' ')output+=L' ';output+=value;};
+    for(size_t at=0;at<text.size();){
+        if(iswspace(text[at])){if(text[at]==L'\n')output+=L'\n';++at;continue;}
+        if(!chinese(text[at])){
+            wchar_t c=text[at++];
+            if(c==L'，'||c==L','||c==L'。'||c==L'.'||c==L'！'||c==L'!'||c==L'？'||c==L'?'||c==L'；'||c==L';'||c==L'：'||c==L':'){
+                output+=c==L'，'?L',':c==L'。'?L'.':c==L'！'?L'!':c==L'？'?L'?':c==L'；'?L';':c==L'：'?L':':c;
+            }else{size_t begin=at-1;while(at<text.size()&&!chinese(text[at])&&!iswspace(text[at])&&text[at]!=L','&&text[at]!=L'.'&&text[at]!=L'!'&&text[at]!=L'?')++at;append(text.substr(begin,at-begin));}
+            continue;
+        }
+        size_t end=at;while(end<text.size()&&chinese(text[end]))++end;
+        auto clause=text.substr(at,end-at);auto exact=to_english(clause);
+        if(!exact.empty()){append(exact[0]);at=end;continue;}
+        // Dynamic programming prefers full word coverage, then longer known
+        // terms. This is explicitly a dictionary reference, not an MT model.
+        size_t n=clause.size();std::vector<int> cost(n+1,1000000);cost[n]=0;
+        struct Part{size_t length=1;std::wstring translation;bool unknown=true;};
+        std::vector<Part> parts(n);
+        for(size_t i=n;i-->0;){
+            cost[i]=50+cost[i+1];parts[i]={1,clause.substr(i,1),true};
+            for(size_t length=1;length<=std::min(size_t(32),n-i);++length){
+                auto senses=forward_.lookup(std::wstring_view(clause).substr(i,length));
+                if(senses.empty())continue;
+                int value=(length==1?5:1)+cost[i+length];
+                if(value<cost[i]){cost[i]=value;parts[i]={length,senses[0],false};}
+            }
+        }
+        for(size_t i=0;i<n;){
+            if(parts[i].unknown){size_t begin=i;while(i<n&&parts[i].unknown)++i;auto gap=clause.substr(begin,i-begin);reply.unknown.push_back(gap);append(L"[untranslated: "+gap+L"]");}
+            else{append(parts[i].translation);i+=parts[i].length;}
+        }
+        reply.reference=true;at=end;
+    }
+    if(!output.empty())reply.senses={std::move(output)};
+    return reply;
 }
 std::wstring OfflineTranslator::chinese_entry(const std::wstring& text)const{
     auto key=normalize(text);auto phrase=reverse_phrases_.find(key);if(phrase!=reverse_phrases_.end())return phrase->second;

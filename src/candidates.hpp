@@ -15,7 +15,7 @@ public:
     T** put(){reset();return &p_;}void reset(){if(p_)p_->Release();p_=nullptr;}
     explicit operator bool()const{return p_!=nullptr;}
 };
-struct Candidate { int number=0;std::wstring word;bool selected=false;std::vector<std::wstring> senses; };
+struct Candidate { int number=0;std::wstring word;bool selected=false;std::vector<std::wstring> senses;bool reference=false; };
 struct Snapshot {
     HWND foreground=nullptr,focus=nullptr,host=nullptr;
     RECT bounds{};uint64_t epoch=0;ULONGLONG time=0;

@@ -21,7 +21,7 @@ FlowLayout grouped_flow(const std::vector<EnglishOption>& options,const std::vec
             x+=cell_width+px(6);
         }
         int bottom=y+px(36);
-        flow.groups.push_back({{px(10),top,width-px(10),bottom},options[begin].word});
+        flow.groups.push_back({{px(10),top,width-px(10),bottom},options[begin].word+(options[begin].reference?L" · 词组参考":L"")});
         top=bottom+px(6);begin=next;
     }
     flow.height=flow.groups.empty()?px(42):top-px(6);

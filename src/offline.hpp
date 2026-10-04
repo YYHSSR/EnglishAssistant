@@ -4,6 +4,7 @@
 #include <functional>
 namespace ea {
 struct OfflineReply {std::wstring text;bool exact=false;std::vector<std::wstring> unknown;};
+struct ForwardReply {std::vector<std::wstring> senses;bool reference=false;std::vector<std::wstring> unknown;};
 class OfflineTranslator {
     Dictionary forward_,reverse_;
     struct Pattern {std::wstring chinese,english;};
@@ -15,6 +16,7 @@ class OfflineTranslator {
 public:
     bool open(const std::wstring& folder);
     std::vector<std::wstring> to_english(const std::wstring& text)const;
+    ForwardReply translate_to_english(const std::wstring& text)const;
     OfflineReply to_chinese(const std::wstring& text)const;
     size_t english_size()const{return forward_.size();}
     size_t chinese_size()const{return reverse_.size();}

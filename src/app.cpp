@@ -135,7 +135,7 @@ void work(){
             if(paused){if(active)publish({});active=false;continue;}
             uint64_t version=epoch.load();auto s=reader.read(version);
             if(version!=epoch.load()||paused){publish({});active=false;continue;}
-            auto local=current_dictionary();for(auto& c:s.candidates)c.senses=local->to_english(c.word);
+            auto local=current_dictionary();for(auto& c:s.candidates){auto reply=local->translate_to_english(c.word);c.senses=std::move(reply.senses);c.reference=reply.reference;}
             s.time=GetTickCount64();active=s.valid();publish(std::move(s));
         }
     }
@@ -316,7 +316,7 @@ void menu(){
 bool visual_equal(const Snapshot&a,const Snapshot&b){
     if(!a.valid()&&!b.valid())return true;
     if(!same_candidates(a,b)||memcmp(&a.bounds,&b.bounds,sizeof(RECT))!=0)return false;
-    for(size_t i=0;i<a.candidates.size();i++)if(a.candidates[i].selected!=b.candidates[i].selected||a.candidates[i].senses!=b.candidates[i].senses)return false;
+    for(size_t i=0;i<a.candidates.size();i++)if(a.candidates[i].selected!=b.candidates[i].selected||a.candidates[i].senses!=b.candidates[i].senses||a.candidates[i].reference!=b.candidates[i].reference)return false;
     return true;
 }
 LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
