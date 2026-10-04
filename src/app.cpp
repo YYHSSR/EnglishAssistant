@@ -330,7 +330,7 @@ void menu(){
     epoch.fetch_add(1);shown={};pending_selection.reset();ShowWindow(popup,SW_HIDE);
     HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,1,paused?L"恢复英文候选":L"暂停英文候选");
     AppendMenuW(menu,MF_STRING|(startup_enabled(executable_path)?MF_CHECKED:0),10,L"开机自启动");
-    AppendMenuW(menu,MF_STRING,11,L"双向自动翻译框");
+    AppendMenuW(menu,MF_STRING,11,L"翻译框");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
     AppendMenuW(menu,MF_STRING,12,L"翻译框背景…");AppendMenuW(menu,MF_STRING,13,L"英文选词框背景…");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,8,L"退出");

@@ -15,18 +15,24 @@ std::atomic<ULONG_PTR> tickets{0};
 HWND translation_window=nullptr;
 struct State {std::mutex mutex;HWND window=nullptr;std::wstring text,status;uint64_t revision=0;std::atomic<bool> cancelled{false};};
 struct Box {
-    HWND window=nullptr,input=nullptr,output=nullptr,header=nullptr,status=nullptr,button=nullptr,direction=nullptr;
+    HWND window=nullptr,input=nullptr,output=nullptr,header=nullptr,button=nullptr,direction=nullptr,tooltip=nullptr;
+    std::wstring status;int input_wheel=0,output_wheel=0;
     HFONT font=nullptr;int dpi=96;DictionaryProvider provider;std::wstring root,appearance_root;Background background;HBRUSH paper=nullptr;
     std::shared_ptr<State> state=std::make_shared<State>();std::thread worker;
     std::unique_ptr<NeuralTranslator> engine;uint64_t revision=0;ULONG_PTR ticket=0;bool busy=false,pending=false,scheduled=false;
     int direction_mode=0;
-    struct Panel {HWND control=nullptr;HBRUSH brush=nullptr;};std::array<Panel,4> panels{};
+    struct Panel {HWND control=nullptr;HBRUSH brush=nullptr;};std::array<Panel,3> panels{};
     HDC surface=nullptr;HBITMAP bitmap=nullptr;HGDIOBJ previous=nullptr;int width=0,height=0,opacity=40;bool dirty=true;
     ~Box(){for(auto& p:panels)if(p.brush)DeleteObject(p.brush);if(surface){SelectObject(surface,previous);DeleteObject(bitmap);DeleteDC(surface);}}
     int px(int value)const{return MulDiv(value,dpi,96);}
     void reload(bool media=true){if(media){background.load(background_path(appearance_root,BackgroundKind::Translation),background_sound(appearance_root,BackgroundKind::Translation));background.visible(IsWindowVisible(window));KillTimer(window,1);if(IsWindowVisible(window)&&background.animated())SetTimer(window,1,67,nullptr);}opacity=background_opacity(appearance_root,BackgroundKind::Translation);dirty=true;RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);}
 };
 RECT panel_rect(Box& b,HWND control){RECT r{};GetClientRect(control,&r);MapWindowPoints(control,b.window,(POINT*)&r,2);return r;}
+void set_status(Box& b,const std::wstring& text){
+    b.status=text;if(!b.tooltip)return;
+    TOOLINFOW info{};info.cbSize=sizeof(info);info.hwnd=b.window;info.uId=(UINT_PTR)b.button;info.lpszText=b.status.data();
+    SendMessageW(b.tooltip,TTM_UPDATETIPTEXTW,0,(LPARAM)&info);
+}
 void prepare_surface(Box& b){
     if(!b.dirty)return;
     RECT r{};GetClientRect(b.window,&r);if(r.right<=0||r.bottom<=0)return;
@@ -46,13 +52,12 @@ void prepare_surface(Box& b){
     b.dirty=false;
 }
 void layout(Box& b){
-    RECT r{};GetClientRect(b.window,&r);int margin=b.px(16),half=(r.bottom-b.px(120))/2;int content=(r.right-2*margin)*76/100;
+    RECT r{};GetClientRect(b.window,&r);int margin=b.px(16),half=(r.bottom-b.px(102))/2;int content=(r.right-2*margin)*76/100;
     MoveWindow(b.header,margin,b.px(10),r.right-2*margin,b.px(26),FALSE);
     MoveWindow(b.input,margin,b.px(42),content,half,FALSE);
     MoveWindow(b.button,margin+content-b.px(120),b.px(48)+half,b.px(120),b.px(30),FALSE);
     MoveWindow(b.direction,margin,b.px(48)+half,b.px(180),b.px(30),FALSE);
     MoveWindow(b.output,margin,b.px(86)+half,content,half,FALSE);
-    MoveWindow(b.status,margin,r.bottom-b.px(28),r.right-2*margin,b.px(24),FALSE);
     for(auto control:{b.input,b.output}){RECT area{};GetClientRect(control,&area);InflateRect(&area,-b.px(10),-b.px(8));SendMessageW(control,EM_SETRECTNP,0,(LPARAM)&area);}
     b.dirty=true;RedrawWindow(b.window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
 }
@@ -65,9 +70,9 @@ TranslationDirection direction_for(Box& b,const std::wstring& text){
 }
 void schedule(Box& b){
     ++b.revision;b.state->cancelled=true;b.pending=false;b.scheduled=false;KillTimer(b.window,translate_timer);KillTimer(b.window,idle_timer);
-    SetWindowTextW(b.output,L"");EnableWindow(b.button,FALSE);auto text=input_text(b);
-    if(text.empty()||std::all_of(text.begin(),text.end(),iswspace)){SetWindowTextW(b.status,L"完全离线 · 输入或粘贴文本后自动翻译");SetTimer(b.window,idle_timer,60000,nullptr);return;}
-    b.scheduled=true;SetTimer(b.window,translate_timer,600,nullptr);SetWindowTextW(b.status,L"等待输入结束…");
+    SetWindowTextW(b.output,L"");SetWindowTextW(b.button,L"复制译文");EnableWindow(b.button,FALSE);auto text=input_text(b);
+    if(text.empty()||std::all_of(text.begin(),text.end(),iswspace)){set_status(b,L"输入或粘贴文本后自动翻译");SetTimer(b.window,idle_timer,60000,nullptr);return;}
+    b.scheduled=true;SetTimer(b.window,translate_timer,600,nullptr);set_status(b,L"等待输入结束…");
 }
 void translate(Box& b){
     KillTimer(b.window,translate_timer);b.scheduled=false;
@@ -75,7 +80,7 @@ void translate(Box& b){
     auto text=input_text(b);if(text.empty()||std::all_of(text.begin(),text.end(),iswspace))return;
     if(b.worker.joinable())b.worker.join();
     b.state->cancelled=false;b.busy=true;b.pending=false;b.ticket=++tickets;auto direction=direction_for(b,text);auto dictionary=b.provider();
-    EnableWindow(b.button,FALSE);SetWindowTextW(b.status,direction==TranslationDirection::ChineseToEnglish?L"中文 → 英文 · 正在本机翻译…":L"英文 → 中文 · 正在本机翻译…");SetWindowTextW(b.output,L"");
+    EnableWindow(b.button,FALSE);SetWindowTextW(b.button,L"正在翻译…");set_status(b,direction==TranslationDirection::ChineseToEnglish?L"中文 → 英文 · 正在本机翻译…":L"英文 → 中文 · 正在本机翻译…");SetWindowTextW(b.output,L"");
     b.worker=std::thread([state=b.state,dictionary,engine=b.engine.get(),direction,revision=b.revision,ticket=b.ticket,text=std::move(text)]{
         std::wstring result,status;
         try{
@@ -93,8 +98,8 @@ void translate(Box& b){
 void copy_result(Box& b){
     int length=GetWindowTextLengthW(b.output);if(!length||!IsWindowEnabled(b.button))return;
     auto memory=GlobalAlloc(GMEM_MOVEABLE,(length+1)*sizeof(wchar_t));if(!memory)return;auto* text=(wchar_t*)GlobalLock(memory);if(!text){GlobalFree(memory);return;}GetWindowTextW(b.output,text,length+1);GlobalUnlock(memory);
-    if(!OpenClipboard(b.window)){GlobalFree(memory);SetWindowTextW(b.status,L"剪贴板暂时被占用，请再点击一次复制。");return;}
-    bool copied=EmptyClipboard()&&SetClipboardData(CF_UNICODETEXT,memory);CloseClipboard();if(!copied)GlobalFree(memory);SetWindowTextW(b.status,copied?L"已复制译文":L"复制失败，请重试。");
+    if(!OpenClipboard(b.window)){GlobalFree(memory);SetWindowTextW(b.button,L"重试复制");set_status(b,L"剪贴板暂时被占用，请再点击一次复制。");return;}
+    bool copied=EmptyClipboard()&&SetClipboardData(CF_UNICODETEXT,memory);CloseClipboard();if(!copied)GlobalFree(memory);SetWindowTextW(b.button,copied?L"已复制":L"重试复制");set_status(b,copied?L"已复制译文":L"复制失败，请重试。");
 }
 void set_direction(Box& b,int mode){b.direction_mode=mode;SetWindowTextW(b.direction,mode==1?L"英文 → 中文 ▾":mode==2?L"中文 → 英文 ▾":L"自动识别方向 ▾");schedule(b);}
 void direction_menu(Box& b){
@@ -102,6 +107,13 @@ void direction_menu(Box& b){
     RECT area{};GetWindowRect(b.direction,&area);int chosen=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,area.left,area.bottom,0,b.window,nullptr);DestroyMenu(menu);if(chosen>=211&&chosen<=213)set_direction(b,chosen-211);
 }
 LRESULT CALLBACK input_proc(HWND h,UINT m,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data){
+    if(m==WM_MOUSEWHEEL){
+        auto& b=*(Box*)data;auto& remainder=GetDlgCtrlID(h)==201?b.input_wheel:b.output_wheel;
+        remainder+=GET_WHEEL_DELTA_WPARAM(w);int steps=remainder/WHEEL_DELTA;remainder%=WHEEL_DELTA;
+        UINT lines=3;SystemParametersInfoW(SPI_GETWHEELSCROLLLINES,0,&lines,0);
+        if(lines==WHEEL_PAGESCROLL){RECT area{};SendMessageW(h,EM_GETRECT,0,(LPARAM)&area);auto dc=GetDC(h);auto old=SelectObject(dc,b.font);TEXTMETRICW metrics{};GetTextMetricsW(dc,&metrics);SelectObject(dc,old);ReleaseDC(h,dc);lines=std::max(1L,(area.bottom-area.top)/std::max(1L,metrics.tmHeight));}
+        if(steps&&lines){SendMessageW(h,EM_LINESCROLL,0,-steps*(int)lines);InvalidateRect(h,nullptr,TRUE);}return 0;
+    }
     if(GetDlgCtrlID(h)==201&&m==WM_KEYDOWN&&w==VK_RETURN&&(GetKeyState(VK_CONTROL)&0x8000)){translate(*(Box*)data);return 0;}
     if(m==WM_KEYDOWN&&w=='A'&&(GetKeyState(VK_CONTROL)&0x8000)){SendMessageW(h,EM_SETSEL,0,-1);return 0;}
     if(m==WM_CHAR&&w==10)return 0;
@@ -120,14 +132,15 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         b->font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");
         b->engine=std::make_unique<NeuralTranslator>(b->root);
         b->header=CreateWindowW(L"STATIC",L"输入或粘贴文本 · 自动翻译（Ctrl + Enter 立即更新）",WS_CHILD|WS_VISIBLE|SS_ENDELLIPSIS,0,0,0,0,h,nullptr,instance,nullptr);
-        DWORD style=WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL|WS_VSCROLL;
+        DWORD style=WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL;
         b->input=CreateWindowExW(0,L"EDIT",L"",style,0,0,0,0,h,(HMENU)201,instance,nullptr);
         b->output=CreateWindowExW(0,L"EDIT",L"",style|ES_READONLY,0,0,0,0,h,(HMENU)202,instance,nullptr);
-        b->button=CreateWindowW(L"BUTTON",L"复制译文",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,0,0,0,0,h,(HMENU)203,instance,nullptr);EnableWindow(b->button,FALSE);
-        b->direction=CreateWindowW(L"BUTTON",L"自动识别方向 ▾",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON,0,0,0,0,h,(HMENU)204,instance,nullptr);
-        b->status=CreateWindowW(L"STATIC",L"完全离线 · 输入或粘贴文本后自动翻译",WS_CHILD|WS_VISIBLE|SS_ENDELLIPSIS,0,0,0,0,h,(HMENU)205,instance,nullptr);
-        for(HWND control:{b->header,b->input,b->output,b->button,b->status,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)b->font,TRUE);
-        b->panels={Box::Panel{b->input},Box::Panel{b->output},Box::Panel{b->header},Box::Panel{b->status}};
+        b->button=CreateWindowW(L"BUTTON",L"复制译文",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,h,(HMENU)203,instance,nullptr);EnableWindow(b->button,FALSE);
+        b->direction=CreateWindowW(L"BUTTON",L"自动识别方向 ▾",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,h,(HMENU)204,instance,nullptr);
+        b->tooltip=CreateWindowExW(WS_EX_TOPMOST,TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_ALWAYSTIP,0,0,0,0,h,nullptr,instance,nullptr);
+        TOOLINFOW tip{};tip.cbSize=sizeof(tip);tip.uFlags=TTF_IDISHWND|TTF_SUBCLASS;tip.hwnd=h;tip.uId=(UINT_PTR)b->button;tip.lpszText=(LPWSTR)L"复制译文";SendMessageW(b->tooltip,TTM_ADDTOOLW,0,(LPARAM)&tip);SendMessageW(b->tooltip,TTM_SETMAXTIPWIDTH,0,b->px(360));set_status(*b,L"输入或粘贴文本后自动翻译");
+        for(HWND control:{b->header,b->input,b->output,b->button,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)b->font,TRUE);
+        b->panels={Box::Panel{b->input},Box::Panel{b->output},Box::Panel{b->header}};
         SendMessageW(b->input,EM_SETLIMITTEXT,8000,0);SendMessageW(b->output,EM_SETLIMITTEXT,128000,0);SetWindowSubclass(b->input,input_proc,1,(DWORD_PTR)b);SetWindowSubclass(b->output,input_proc,1,(DWORD_PTR)b);layout(*b);b->reload();return 0;
     }
     if(m==WM_SIZE){layout(*b);bool visible=w!=SIZE_MINIMIZED&&IsWindowVisible(h);b->background.visible(visible);KillTimer(h,1);if(visible&&b->background.animated())SetTimer(h,1,67,nullptr);return 0;}
@@ -135,15 +148,23 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_TIMER){if(w==translate_timer){if(b->scheduled)translate(*b);}else if(w==idle_timer){KillTimer(h,idle_timer);if(!b->busy&&!b->scheduled)b->engine->reset();}else if(w==background_timer){b->dirty=true;RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);}return 0;}
     if(m==WM_PAINT||m==WM_PRINTCLIENT){PAINTSTRUCT p{};auto dc=m==WM_PAINT?BeginPaint(h,&p):(HDC)w;prepare_surface(*b);if(b->surface)BitBlt(dc,0,0,b->width,b->height,b->surface,0,0,SRCCOPY);if(m==WM_PAINT)EndPaint(h,&p);return 0;}
     if(m==WM_ERASEBKGND)return 1;
-    if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT){prepare_surface(*b);auto dc=(HDC)w;SetTextColor(dc,RGB(28,55,69));SetBkMode(dc,TRANSPARENT);POINT origin{};LPtoDP(dc,&origin,1);SetBrushOrgEx(dc,origin.x,origin.y,nullptr);for(auto& p:b->panels)if(p.control==(HWND)l&&p.brush)return (LRESULT)p.brush;return (LRESULT)b->paper;}
-    if(m==WM_DPICHANGED){b->dpi=HIWORD(w);auto font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");for(HWND control:{b->header,b->input,b->output,b->button,b->status,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)font,TRUE);DeleteObject(b->font);b->font=font;auto*r=(RECT*)l;SetWindowPos(h,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);layout(*b);return 0;}
+    if(m==WM_DRAWITEM){
+        auto* item=(DRAWITEMSTRUCT*)l;if(item->CtlID!=203&&item->CtlID!=204)return FALSE;prepare_surface(*b);
+        auto area=panel_rect(*b,item->hwndItem);auto bounds=item->rcItem;BitBlt(item->hDC,0,0,bounds.right,bounds.bottom,b->surface,area.left,area.top,SRCCOPY);
+        paint_glass(item->hDC,bounds,(item->itemState&ODS_SELECTED)?32:18,b->px(6));
+        auto pen=CreatePen(PS_SOLID,1,RGB(211,224,230));auto old_pen=SelectObject(item->hDC,pen),old_brush=SelectObject(item->hDC,GetStockObject(HOLLOW_BRUSH));RoundRect(item->hDC,0,0,bounds.right,bounds.bottom,b->px(6),b->px(6));SelectObject(item->hDC,old_brush);SelectObject(item->hDC,old_pen);DeleteObject(pen);
+        auto old_font=SelectObject(item->hDC,b->font);SetBkMode(item->hDC,TRANSPARENT);SetTextColor(item->hDC,(item->itemState&ODS_DISABLED)?RGB(151,166,173):RGB(88,116,132));wchar_t text[128]{};GetWindowTextW(item->hwndItem,text,128);DrawTextW(item->hDC,text,-1,&bounds,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
+        if((item->itemState&ODS_FOCUS)&&!(item->itemState&ODS_NOFOCUSRECT)){InflateRect(&bounds,-b->px(4),-b->px(4));DrawFocusRect(item->hDC,&bounds);}SelectObject(item->hDC,old_font);return TRUE;
+    }
+    if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT){prepare_surface(*b);auto dc=(HDC)w;SetTextColor(dc,RGB(65,94,110));SetBkMode(dc,TRANSPARENT);POINT origin{};LPtoDP(dc,&origin,1);SetBrushOrgEx(dc,origin.x,origin.y,nullptr);for(auto& p:b->panels)if(p.control==(HWND)l&&p.brush)return (LRESULT)p.brush;return (LRESULT)b->paper;}
+    if(m==WM_DPICHANGED){b->dpi=HIWORD(w);auto font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");for(HWND control:{b->header,b->input,b->output,b->button,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)font,TRUE);DeleteObject(b->font);b->font=font;auto*r=(RECT*)l;SetWindowPos(h,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);layout(*b);return 0;}
     if(m==WM_GETMINMAXINFO){((MINMAXINFO*)l)->ptMinTrackSize={b->px(520),b->px(400)};return 0;}
     if(m==WM_COMMAND){auto id=LOWORD(w);if(id==201&&HIWORD(w)==EN_CHANGE)schedule(*b);else if(id==204&&HIWORD(w)==BN_CLICKED)direction_menu(*b);else if(id==203&&HIWORD(w)==BN_CLICKED)copy_result(*b);else if(id>=211&&id<=213)set_direction(*b,id-211);return 0;}
     if(m==translated_message){
         if(!b->busy||w!=b->ticket)return 0;
         if(b->worker.joinable())b->worker.join();
         b->busy=false;
-        {std::lock_guard<std::mutex>lock(b->state->mutex);if(b->state->revision==b->revision){SetWindowTextW(b->output,b->state->text.c_str());SetWindowTextW(b->status,b->state->status.c_str());EnableWindow(b->button,!b->state->text.empty());}}
+        {std::lock_guard<std::mutex>lock(b->state->mutex);if(b->state->revision==b->revision){SetWindowTextW(b->output,b->state->text.empty()?b->state->status.c_str():b->state->text.c_str());set_status(*b,b->state->status);SetWindowTextW(b->button,L"复制译文");EnableWindow(b->button,!b->state->text.empty());}}
         if(b->pending)translate(*b);else SetTimer(h,idle_timer,60000,nullptr);return 0;
     }
     if(m==WM_SETFOCUS){SetFocus(b->input);return 0;}
@@ -157,7 +178,7 @@ HWND show_translation_box(HINSTANCE instance,HWND owner,DictionaryProvider provi
     if(translation_window&&IsWindow(translation_window)){ShowWindow(translation_window,SW_RESTORE);SetForegroundWindow(translation_window);return translation_window;}
     WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=box_proc;cls.lpszClassName=L"EnglishAssistant.Translation";cls.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);cls.hIcon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);RegisterClassW(&cls);
     auto*b=new Box;b->provider=std::move(provider);b->root=root;b->appearance_root=appearance_root.empty()?root:appearance_root;int dpi=(int)GetDpiForSystem();
-    translation_window=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,L"EnglishAssistant — 离线翻译框",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(840,dpi,96),MulDiv(600,dpi,96),owner,nullptr,instance,b);
+    translation_window=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,L"翻译框",WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,CW_USEDEFAULT,CW_USEDEFAULT,MulDiv(840,dpi,96),MulDiv(600,dpi,96),owner,nullptr,instance,b);
     if(translation_window&&visible){ShowWindow(translation_window,SW_SHOWNORMAL);SetForegroundWindow(translation_window);SetFocus(b->input);}return translation_window;
 }
 void close_translation_box(){if(translation_window&&IsWindow(translation_window))DestroyWindow(translation_window);}

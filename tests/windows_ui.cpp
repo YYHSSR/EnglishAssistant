@@ -45,6 +45,15 @@ bool test_backgrounds(const std::wstring& root,ea::DictionaryProvider provider){
         if(opacity==0)ok&=control!=RGB(255,255,255);
     }
     SetWindowTextW(input,L"Editable text remains selectable.");SendMessageW(input,EM_SETSEL,0,8);DWORD begin=0,end=0;SendMessageW(input,EM_GETSEL,(WPARAM)&begin,(LPARAM)&end);ok&=begin==0&&end==8;SendMessageW(input,EM_REPLACESEL,TRUE,(LPARAM)L"Updated");wchar_t text[128]{};GetWindowTextW(input,text,128);ok&=std::wstring(text)==L"Updated text remains selectable.";
+    // Long text must remain reachable after removing visible scrollbars.
+    std::wstring long_text;for(int line=0;line<120;++line)long_text+=L"A selectable line of translated text.\r\n";
+    auto output=GetDlgItem(window,202);SetWindowTextW(output,long_text.c_str());SendMessageW(output,EM_SETSEL,0,8);
+    auto before=SendMessageW(output,EM_GETFIRSTVISIBLELINE,0,0);UINT wheel_lines=0;SystemParametersInfoW(SPI_GETWHEELSCROLLLINES,0,&wheel_lines,0);
+    SendMessageW(output,WM_MOUSEWHEEL,MAKEWPARAM(0,(WORD)-60),0);SendMessageW(output,WM_MOUSEWHEEL,MAKEWPARAM(0,(WORD)-60),0);
+    if(wheel_lines)ok&=SendMessageW(output,EM_GETFIRSTVISIBLELINE,0,0)>before;
+    SendMessageW(output,EM_GETSEL,(WPARAM)&begin,(LPARAM)&end);ok&=begin==0&&end==8;
+    SendMessageW(output,EM_SETSEL,-1,-1);SendMessageW(output,EM_SCROLLCARET,0,0);ok&=SendMessageW(output,EM_GETFIRSTVISIBLELINE,0,0)>before;
+    ok&=!(GetWindowLongPtrW(output,GWL_STYLE)&WS_VSCROLL);SetWindowTextW(output,L"");
     auto handles=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS);
     for(int i=0;i<40;++i){auto slider=GetDlgItem(translation,304);SendMessageW(slider,TBM_SETPOS,TRUE,i);SendMessageW(translation,WM_HSCROLL,TB_THUMBTRACK,(LPARAM)slider);ea::reload_translation_background(false);pixel(window,100,100,true);}
     ok&=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS)<=handles+2;
