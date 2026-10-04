@@ -4,6 +4,7 @@ import atexit
 import fcntl
 import os
 import signal
+import socket
 import sys
 import threading
 from pathlib import Path
@@ -13,6 +14,24 @@ gi.require_version('IBus', '1.0')
 from gi.repository import Gtk, IBus, GLib, Gio
 from core import Core, ROOT, autostart, autostart_enabled, desktop_exec
 from engine import AssistantEngine, ensure_libpinyin
+
+
+class AssistantFactory(IBus.Factory):
+    def __init__(self, connection):
+        super().__init__(connection=connection, object_path=IBus.PATH_FACTORY)
+        self.connection = connection
+        self.count = 0
+        self.engines = []
+
+    def do_create_engine(self, name):
+        if name != 'EnglishAssistant':
+            raise RuntimeError('Unknown engine: ' + name)
+        self.count += 1
+        engine = AssistantEngine(connection=self.connection,
+                                 object_path='/org/freedesktop/IBus/EnglishAssistant/Engine/{}'.format(self.count))
+        self.engines.append(engine)
+        engine.connect('destroy', lambda item: self.engines.remove(item))
+        return engine
 
 
 class Application:
@@ -28,8 +47,7 @@ class Application:
         ensure_libpinyin(self.bus.get_connection())
         AssistantEngine.core = self.core
         AssistantEngine.ui = self
-        self.factory = IBus.Factory(connection=self.bus.get_connection(), object_path=IBus.PATH_FACTORY)
-        self.factory.add_engine('EnglishAssistant', AssistantEngine.__gtype__)
+        self.factory = AssistantFactory(self.bus.get_connection())
         self.bus.request_name('org.freedesktop.IBus.EnglishAssistant', 0)
         component = IBus.Component(name='org.freedesktop.IBus.EnglishAssistant',
                                    description='EnglishAssistant offline IBus companion',
@@ -105,6 +123,14 @@ class Application:
         window.set_default_size(720, 520)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         window.add(box)
+        tools = Gtk.Box(spacing=6)
+        for label, callback in [('个人词表', lambda: self.show_editor(ROOT / 'personal.tsv', True)),
+                                ('重新加载', self.reload), ('使用说明', lambda: self.show_editor(ROOT / '使用说明.md', False)),
+                                ('开机自启动', self.toggle_startup)]:
+            tool = Gtk.Button(label=label)
+            tool.connect('clicked', lambda _, action=callback: action())
+            tools.pack_start(tool, False, False, 0)
+        box.pack_start(tools, False, False, 0)
         view, scroll = self.text_area(editable)
         view.get_buffer().set_text(path.read_text(encoding='utf-8-sig') if path.exists() else '')
         box.pack_start(scroll, True, True, 0)
@@ -199,15 +225,42 @@ def main():
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print('EnglishAssistant 已运行；可在输入法菜单打开翻译框。')
+        if '--translate' in sys.argv:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(2)
+                client.connect(str(cache / 'app.sock'))
+                client.sendall(b'translate')
+        else:
+            print('EnglishAssistant 已运行；可在输入法菜单打开翻译框。')
         return 0
     (ROOT / 'personal.tsv').touch(exist_ok=True)
     app = Application('--ibus' in sys.argv)
+    address = cache / 'app.sock'
+    if address.exists():
+        address.unlink()
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(address))
+    os.chmod(str(address), 0o600)
+    server.listen(4)
+    server.setblocking(False)
+    def receive(*_):
+        try:
+            client, _ = server.accept()
+            with client:
+                client.settimeout(0.2)
+                if client.recv(32) == b'translate':
+                    app.show_translation()
+        except (OSError, socket.timeout) as error:
+            app.report(error)
+        return True
+    GLib.io_add_watch(server.fileno(), GLib.IO_IN, receive)
     if '--translate' in sys.argv:
         app.show_translation()
     for signum in (signal.SIGTERM, signal.SIGINT):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, lambda: (Gtk.main_quit(), False)[1])
     Gtk.main()
+    server.close()
+    address.unlink()
     app.core.close()
     atexit.unregister(app.core.close)
     return 0

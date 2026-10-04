@@ -112,6 +112,9 @@ class AssistantEngine(IBus.Engine):
             elif signal == 'RegisterProperties':
                 props = value(0)
                 props.append(IBus.Property(key='ea-translate', label=IBus.Text.new_from_string('英文 → 中文翻译框')))
+                for key, label in [('ea-pause', '暂停 / 恢复英文候选'), ('ea-personal', '编辑个人词表'),
+                                   ('ea-reload', '重新加载个人词表'), ('ea-help', '使用说明')]:
+                    props.append(IBus.Property(key=key, label=IBus.Text.new_from_string(label)))
                 props.append(IBus.Property(key='ea-startup', prop_type=IBus.PropType.TOGGLE,
                                           label=IBus.Text.new_from_string('开机自启动'),
                                           state=IBus.PropState.CHECKED if self.ui.startup_enabled() else IBus.PropState.UNCHECKED))
@@ -258,6 +261,17 @@ class AssistantEngine(IBus.Engine):
             self.ui.show_translation()
         elif name == 'ea-startup':
             self.ui.toggle_startup()
+        elif name == 'ea-pause':
+            self.ui.paused = not self.ui.paused
+            self.clear()
+        elif name == 'ea-personal':
+            from core import ROOT
+            self.ui.show_editor(ROOT / 'personal.tsv', True)
+        elif name == 'ea-help':
+            from core import ROOT
+            self.ui.show_editor(ROOT / '使用说明.md', False)
+        elif name == 'ea-reload':
+            self.ui.reload()
         else:
             self.inner('PropertyActivate', '(su)', (name, state))
 

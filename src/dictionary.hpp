@@ -7,12 +7,12 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
-#include <filesystem>
+#include "filesystem_compat.hpp"
 
 namespace ea {
 std::wstring wide(std::string_view text);
 std::string utf8(std::wstring_view text);
-std::filesystem::path native_path(std::wstring_view text);
+fs::path native_path(std::wstring_view text);
 std::vector<std::wstring> parse_senses(std::string_view fields);
 
 // The TSV stays mapped; the only per-entry allocation is a compact line index.

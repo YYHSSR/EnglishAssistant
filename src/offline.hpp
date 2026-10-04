@@ -1,6 +1,5 @@
 #pragma once
 #include "dictionary.hpp"
-#include <filesystem>
 #include <functional>
 namespace ea {
 struct OfflineReply {std::wstring text;bool exact=false;std::vector<std::wstring> unknown;};
@@ -11,7 +10,7 @@ class OfflineTranslator {
     std::vector<Pattern> patterns_;
     std::unordered_map<std::wstring,std::wstring> reverse_phrases_;
     static std::wstring normalize(std::wstring_view text);
-    void add_reverse_phrases(const std::filesystem::path& path);
+    void add_reverse_phrases(const fs::path& path);
     std::wstring chinese_entry(const std::wstring& text)const;
 public:
     bool open(const std::wstring& folder);

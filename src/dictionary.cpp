@@ -1,7 +1,6 @@
 #include "dictionary.hpp"
 #include <algorithm>
 #include <fstream>
-#include <filesystem>
 #ifndef _WIN32
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -50,11 +49,11 @@ std::string utf8(std::wstring_view s) {
     return result;
 #endif
 }
-std::filesystem::path native_path(std::wstring_view text){
+fs::path native_path(std::wstring_view text){
 #ifdef _WIN32
-    return std::filesystem::path(text);
+    return fs::path(text);
 #else
-    return std::filesystem::u8path(utf8(text));
+    return fs::u8path(utf8(text));
 #endif
 }
 static std::string_view trim(std::string_view s) {

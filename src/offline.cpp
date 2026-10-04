@@ -10,7 +10,7 @@ std::wstring OfflineTranslator::normalize(std::wstring_view text){
     while(!result.empty()&&result.back()==L' ')result.pop_back();
     return result;
 }
-void OfflineTranslator::add_reverse_phrases(const std::filesystem::path& path){
+void OfflineTranslator::add_reverse_phrases(const fs::path& path){
     std::ifstream in{path};std::string line;
     while(std::getline(in,line)){
         if(line.size()>=3&&line.substr(0,3)=="\xef\xbb\xbf")line.erase(0,3);
