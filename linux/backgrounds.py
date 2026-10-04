@@ -108,8 +108,13 @@ class Background(Gtk.DrawingArea):
 
     def sample(self, sink):
         sample = sink.emit('pull-sample')
-        info = GstVideo.VideoInfo()
-        info.from_caps(sample.get_caps())
+        if not sample:
+            return Gst.FlowReturn.EOS
+        if hasattr(GstVideo.VideoInfo, 'new_from_caps'):
+            info = GstVideo.VideoInfo.new_from_caps(sample.get_caps())
+        else:
+            info = GstVideo.VideoInfo()
+            info.from_caps(sample.get_caps())
         if info.width > 4096 or info.height > 4096:
             self.failure = '视频尺寸超过 4096 × 4096'
             return Gst.FlowReturn.ERROR
@@ -212,6 +217,12 @@ def show_settings(application, kind):
         if uris and urlparse(uris[0]).scheme == 'file':
             choose(unquote(urlparse(uris[0]).path))
             Gtk.drag_finish(context, True, False, timestamp)
+    def error_tick():
+        if preview.failure:
+            label.set_text(preview.failure)
+        return True
+    timer = GLib.timeout_add(500, error_tick)
+    window.connect('destroy', lambda *_: GLib.source_remove(timer))
     window.connect('drag-data-received', dropped)
     application.editors.append(window)
     window.connect('destroy', lambda *_: application.editors.remove(window))
