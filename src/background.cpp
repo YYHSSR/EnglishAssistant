@@ -43,6 +43,7 @@ bool video_file(const std::wstring& path){auto ext=extension(path);return ext==L
 }
 struct Background::Impl {
     std::unique_ptr<Gdiplus::Image> image;
+    std::unique_ptr<Gdiplus::Bitmap> cached;int cached_width=0,cached_height=0;
     std::vector<BYTE> frame;UINT width=0,height=0;
     UINT gif_count=0;std::vector<UINT> gif_delays;ULONGLONG gif_start=0;
     std::thread decoder;std::mutex mutex;std::condition_variable wake;
@@ -56,15 +57,15 @@ struct Background::Impl {
         {std::lock_guard<std::mutex> lock(mutex);stop=true;}wake.notify_all();if(decoder.joinable())decoder.join();
     }
     void decode(std::wstring path){
-        HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
+        struct Apartment {HRESULT result=CoInitializeEx(nullptr,COINIT_MULTITHREADED);~Apartment(){if(SUCCEEDED(result))CoUninitialize();}} apartment;
         auto fail=[&](const wchar_t* message){std::lock_guard<std::mutex> lock(mutex);failure=message;};
         {
             Com<IMFAttributes> attributes;Com<IMFSourceReader> reader;Com<IMFMediaType> type,current;
-            if(FAILED(MFCreateAttributes(attributes.put(),2))){fail(L"无法初始化视频解码器。");if(SUCCEEDED(apartment))CoUninitialize();return;}attributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,TRUE);
+            if(FAILED(MFCreateAttributes(attributes.put(),2))){fail(L"无法初始化视频解码器。");return;}attributes->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,TRUE);
             if(FAILED(MFCreateSourceReaderFromURL(path.c_str(),attributes.get(),reader.put()))){fail(L"视频格式无法读取，请使用系统支持的 MP4 / WMV。");}
             else{
                 reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS,FALSE);reader->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM,TRUE);
-                if(FAILED(MFCreateMediaType(type.put()))){fail(L"无法初始化视频格式。");if(SUCCEEDED(apartment))CoUninitialize();return;}type->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video);type->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_RGB32);
+                if(FAILED(MFCreateMediaType(type.put()))){fail(L"无法初始化视频格式。");return;}type->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video);type->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_RGB32);
                 if(FAILED(reader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,nullptr,type.get()))||FAILED(reader->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,current.put()))){fail(L"系统无法解码这个视频。建议使用 H.264 MP4。");}
                 else{
                     UINT w=0,h=0;MFGetAttributeSize(current.get(),MF_MT_FRAME_SIZE,&w,&h);
@@ -94,7 +95,6 @@ struct Background::Impl {
                 }
             }
         }
-        if(SUCCEEDED(apartment))CoUninitialize();
     }
 };
 Background::Background(){runtime();impl_=std::make_unique<Impl>();}
@@ -150,7 +150,16 @@ void Background::paint(HDC dc,RECT bounds){
             while(frame+1<impl_->gif_delays.size()&&time>=impl_->gif_delays[frame])time-=impl_->gif_delays[frame++];
             impl_->image->SelectActiveFrame(&Gdiplus::FrameDimensionTime,frame);
         }
-        draw(*impl_->image);
+        int width=bounds.right-bounds.left,height=bounds.bottom-bounds.top;
+        if(impl_->gif_count<=1&&width>0&&height>0){
+            if(!impl_->cached||impl_->cached_width!=width||impl_->cached_height!=height){
+                impl_->cached=std::make_unique<Gdiplus::Bitmap>(width,height,PixelFormat32bppPARGB);impl_->cached_width=width;impl_->cached_height=height;
+                Gdiplus::Graphics cache(impl_->cached.get());cache.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+                float scale=std::max(float(width)/impl_->image->GetWidth(),float(height)/impl_->image->GetHeight());float w=impl_->image->GetWidth()*scale,h=impl_->image->GetHeight()*scale;
+                cache.DrawImage(impl_->image.get(),Gdiplus::RectF(width-w,height-h,w,h));
+            }
+            graphics.DrawImage(impl_->cached.get(),int(bounds.left),int(bounds.top),width,height);
+        }else draw(*impl_->image);
     }else{
         std::lock_guard<std::mutex> lock(impl_->mutex);
         if(!impl_->frame.empty()){Gdiplus::Bitmap frame(impl_->width,impl_->height,impl_->width*4,PixelFormat32bppRGB,impl_->frame.data());draw(frame);}

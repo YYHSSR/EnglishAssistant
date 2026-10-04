@@ -35,7 +35,8 @@ void translate(Box& b){
         try{auto exact=dictionary->to_chinese(text);if(exact.exact){result=std::move(exact.text);status=L"已匹配本地词条 · 选中译文后 Ctrl + C 复制";}
         else{auto reply=neural_translate(root,text,state->cancelled);result=std::move(reply.text);status=reply.error.empty()?L"本地模型译文 · 请核对专名及专业术语":L"翻译失败："+reply.error;}}
         catch(const std::exception&){status=L"翻译失败，请检查本地模型文件。";}
-        std::lock_guard<std::mutex>lock(state->mutex);state->text=std::move(result);state->status=std::move(status);if(state->window)PostMessageW(state->window,translated_message,0,0);
+        std::wstring windows_text;for(size_t i=0;i<result.size();++i){if(result[i]==L'\n'&&(i==0||result[i-1]!=L'\r'))windows_text+=L'\r';windows_text+=result[i];}
+        std::lock_guard<std::mutex>lock(state->mutex);state->text=std::move(windows_text);state->status=std::move(status);if(state->window)PostMessageW(state->window,translated_message,0,0);
     });
 }
 LRESULT CALLBACK input_proc(HWND h,UINT m,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data){
