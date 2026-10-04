@@ -1,60 +1,22 @@
 #include "dictionary.hpp"
 #include <algorithm>
 #include <fstream>
-#ifndef _WIN32
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#endif
 
 namespace ea {
 std::wstring wide(std::string_view s) {
-#ifdef _WIN32
     if(s.empty())return {};
     int n=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),(int)s.size(),nullptr,0);
     if(n<=0)return {};
     std::wstring r(n,L'\0');MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,s.data(),(int)s.size(),r.data(),n);return r;
-#else
-    std::wstring result;
-    for(size_t i=0;i<s.size();){
-        uint32_t c=(unsigned char)s[i++];int following=0;uint32_t minimum=0;
-        if(c>=0xc2&&c<=0xdf){following=1;minimum=0x80;c&=31;}
-        else if(c>=0xe0&&c<=0xef){following=2;minimum=0x800;c&=15;}
-        else if(c>=0xf0&&c<=0xf4){following=3;minimum=0x10000;c&=7;}
-        else if(c>=0x80)return {};
-        if(i+following>s.size())return {};
-        while(following--){auto b=(unsigned char)s[i++];if((b&0xc0)!=0x80)return {};c=(c<<6)|(b&63);}
-        if(c<minimum||c>0x10ffff||(c>=0xd800&&c<=0xdfff))return {};
-        result+=static_cast<wchar_t>(c);
-    }
-    return result;
-#endif
 }
 std::string utf8(std::wstring_view s) {
-#ifdef _WIN32
     if(s.empty())return {};
     int n=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,s.data(),(int)s.size(),nullptr,0,nullptr,nullptr);
     if(n<=0)return {};
     std::string r(n,'\0');WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,s.data(),(int)s.size(),r.data(),n,nullptr,nullptr);return r;
-#else
-    std::string result;
-    for(wchar_t value:s){uint32_t c=value;
-        if(c>0x10ffff||(c>=0xd800&&c<=0xdfff))return {};
-        if(c<0x80)result+=char(c);
-        else if(c<0x800){result+=char(0xc0|(c>>6));result+=char(0x80|(c&63));}
-        else if(c<0x10000){result+=char(0xe0|(c>>12));result+=char(0x80|((c>>6)&63));result+=char(0x80|(c&63));}
-        else{result+=char(0xf0|(c>>18));result+=char(0x80|((c>>12)&63));result+=char(0x80|((c>>6)&63));result+=char(0x80|(c&63));}
-    }
-    return result;
-#endif
 }
 fs::path native_path(std::wstring_view text){
-#ifdef _WIN32
     return fs::path(text);
-#else
-    return fs::u8path(utf8(text));
-#endif
 }
 static std::string_view trim(std::string_view s) {
     while(!s.empty() && (s.front()==' '||s.front()=='\r'))s.remove_prefix(1);
@@ -79,17 +41,11 @@ std::vector<std::wstring> parse_senses(std::string_view fields) {
     return out;
 }
 Dictionary::~Dictionary(){
-#ifdef _WIN32
     if(bytes_)UnmapViewOfFile(bytes_);
     if(mapping_)CloseHandle(mapping_);
     if(file_!=INVALID_HANDLE_VALUE)CloseHandle(file_);
-#else
-    if(bytes_)munmap(const_cast<char*>(bytes_),mapped_size_);
-    if(file_>=0)::close(file_);
-#endif
 }
 bool Dictionary::open(const std::wstring& path){
-#ifdef _WIN32
     if(file_!=INVALID_HANDLE_VALUE){error_="Dictionary already open";return false;}
     file_=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(file_==INVALID_HANDLE_VALUE){error_="Cannot open glossary-en.tsv";return false;}
@@ -100,17 +56,6 @@ bool Dictionary::open(const std::wstring& path){
     bytes_=(const char*)MapViewOfFile(mapping_,FILE_MAP_READ,0,0,0);
     if(!bytes_){error_="Cannot read glossary";return false;}
     uint32_t len=(uint32_t)size.QuadPart;
-#else
-    if(file_>=0){error_="Dictionary already open";return false;}
-    file_=::open(utf8(path).c_str(),O_RDONLY|O_CLOEXEC);
-    if(file_<0){error_="Cannot open glossary";return false;}
-    struct stat info{};
-    if(fstat(file_,&info)!=0||info.st_size<=0||info.st_size>128*1024*1024){error_="Invalid glossary size";return false;}
-    mapped_size_=static_cast<size_t>(info.st_size);
-    auto mapped=mmap(nullptr,mapped_size_,PROT_READ,MAP_PRIVATE,file_,0);
-    if(mapped==MAP_FAILED){error_="Cannot map glossary";return false;}
-    bytes_=static_cast<const char*>(mapped);uint32_t len=static_cast<uint32_t>(mapped_size_);
-#endif
     index_.reserve(std::count(bytes_,bytes_+len,'\n')+1);
     uint32_t start=(len>=3 && std::string_view(bytes_,3)=="\xef\xbb\xbf")?3:0;
     for(uint32_t at=start;at<=len;++at){

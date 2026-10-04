@@ -16,7 +16,6 @@
 
 Windows APIs and system DLLs provide the application UI and accessibility interfaces. MinGW-w64 GCC was used to build the Windows binaries, with its standard runtime statically linked; the output imports only Windows system libraries and the Windows Universal C Runtime. The compiler's standard runtime is covered by its respective license and GCC Runtime Library Exception (see the compiler distribution).
 
-Linux uses separately installed distribution packages: IBus (https://github.com/ibus/ibus), ibus-libpinyin (https://github.com/libpinyin/ibus-libpinyin), GTK 3, PyGObject and Python. The adapter invokes the system IBus/libpinyin service through D-Bus; it does not bundle or copy their engine source or binaries. Their original licenses remain applicable to those packages. The adapter and common wordbank core are independently implemented here.
 
 ## Vodyanitsa / 沃雅妮莎 icon
 
@@ -31,7 +30,7 @@ Linux uses separately installed distribution packages: IBus (https://github.com/
 
 - OPUS / Helsinki-NLP English–Chinese model: https://huggingface.co/Helsinki-NLP/opus-mt-en-zh, Apache-2.0. The int8 CTranslate2 conversion is from https://huggingface.co/jiangzhuo9357/opus-mt-en-zh-ct2 at the revision recorded in `models/manifest.json`. Full license: `models/LICENSE.Apache-2.0.txt`. We did not alter its weights. Model provenance and inference changes: `models/README.md`.
 - Windows embedded Python: https://www.python.org/downloads/release/python-31210/ (PSF license). Runtime wheels: CTranslate2 https://github.com/OpenNMT/CTranslate2 (MIT), SentencePiece https://github.com/google/sentencepiece (Apache-2.0), NumPy https://numpy.org (BSD and its bundled numerical-library licenses), PyYAML https://pyyaml.org (MIT), setuptools https://github.com/pypa/setuptools (MIT), pip https://pip.pypa.io (MIT and vendored dependency notices). Original license files remain inside `runtime/windows-runtime.zip`; extract it to review `LICENSE.txt` and the packages' `.dist-info` directories. See `runtime/README.md` and `translation/requirements.txt` for versions.
-- Windows videos use system Media Foundation. Linux video playback uses separately installed GStreamer packages: https://gstreamer.freedesktop.org/ (component licenses apply; not bundled).
+- Video playback uses Windows system Media Foundation.
 - `msvc-runtime` 14.44.35112 wheel from PyPI supplies unmodified Microsoft-signed C++ runtime files; Microsoft proprietary terms apply. Its redistribution notice is preserved in `msvc_runtime-14.44.35112.dist-info/licenses/LICENSE`. Microsoft redistribution list: https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution . These files are not covered by the program license.
 - The project's non-commercial restriction does not modify the licenses or rights of these third-party components.
 

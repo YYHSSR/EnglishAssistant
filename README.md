@@ -2,24 +2,7 @@
 
 <img src="resources/vodyanitsa.png" width="72" alt="沃雅妮莎头像" />
 
-离线英文候选助手。Windows 搭配微软拼音；Linux 搭配 Ubuntu 原生 IBus 智能拼音（libpinyin）。在中文候选旁显示英文单词或短句，按住 **Ctrl** 用数字或方向键选择，松开输出英文。
-
-## Ubuntu 20.04 及以上
-
-```sh
-git clone https://github.com/YYHSSR/EnglishAssistant.git
-cd EnglishAssistant
-sh ./install.sh
-sh ./start.sh
-```
-
-安装脚本按需通过 apt 安装构建工具和系统 IBus / GTK / GStreamer 依赖，安装独立 Python 翻译运行环境，编译共用 C++ 核心、运行测试，并注册当前用户的输入源。随后在系统输入源中选择 **EnglishAssistant 智能拼音**。它调用系统 libpinyin 保留中文候选。若列表未刷新，注销后重新登录。原有输入源保留，可随时切回。
-
-**Ctrl＋数字 / 方向键** 选择英文，松开输出；普通空格和数字选择中文。同一中文词的英文释义同行排列，长内容换行。Xorg 会话使用不抢焦点的自定义英文背景面板；Wayland 会话保留系统英文辅助面板与系统主题。要使用英文选词框背景，在登录页选择 **Ubuntu on Xorg**。翻译框背景不受这一限制。
-
-运行 `sh ./start.sh --translate` 打开离线英文转中文翻译框。输入法菜单可打开翻译框、两个背景设置、设置开机自启动。部分 GNOME 桌面不显示旧式托盘图标，可使用输入法菜单或应用列表中的 EnglishAssistant。安装需要下载系统依赖和 Python wheels；日常查词与整句翻译完全离线。移动目录后重新运行 install.sh 更新路径。
-
-支持 Ubuntu 20.04 及较新版本的 **IBus + libpinyin** 桌面，安装环境为 x86_64，不含 Fcitx 适配。请以普通桌面用户运行安装脚本和程序。
+仅支持 Windows x64 的离线英文候选助手，搭配微软拼音。在中文候选旁显示英文单词或短句，按住 **Ctrl** 用数字或方向键选择，松开输出英文。
 
 ## 使用
 
@@ -60,7 +43,7 @@ sh ./start.sh
 
 托盘的 **翻译框背景…** 和 **英文选词框背景…** 分别设置两种窗口。点击“选择图片 / 视频”，或者把文件拖入设置窗口。支持 PNG、JPG、BMP、GIF 动图，以及系统可解码的 MP4、WMV、MOV、AVI 视频；优先使用 H.264 MP4。可在设置中勾选“播放视频声音”，默认静音，预览始终静音。窗口隐藏时停止刷新并暂停声音；“恢复默认背景”可随时还原。
 
-默认提供沃雅妮莎主题的 **月下水庭**（翻译框）与 **晨光涟漪**（英文选词框），为两张不同的静态图片，采用浅色卡片保证文字可读。使用 Codex 内置图像工具生成，设计提示见 [resources/backgrounds/PROMPTS.md](resources/backgrounds/PROMPTS.md)。Windows 自定义媒体保存在 `backgrounds/custom`，Linux 保存在当前用户的 `~/.config/EnglishAssistant/backgrounds`，均不提交到仓库。图片最大 8192×8192、视频最大 4096×4096；推荐 1080p 或以下。
+默认提供沃雅妮莎主题的 **月下水庭**（翻译框）与 **晨光涟漪**（英文选词框），为两张不同的静态图片，采用浅色卡片保证文字可读。使用 Codex 内置图像工具生成，设计提示见 [resources/backgrounds/PROMPTS.md](resources/backgrounds/PROMPTS.md)。自定义媒体保存在 `backgrounds/custom`，不提交到仓库。图片最大 8192×8192、视频最大 4096×4096；推荐 1080p 或以下。
 
 ## 开机自启动
 
@@ -68,7 +51,7 @@ sh ./start.sh
 
 ## 构建
 
-共用词库核心为 C++17。Windows 使用原生 Win32、GDI+、Media Foundation、CMake 3.20+、Ninja、MinGW-w64 GCC；内置独立 Python 运行库只用于整句翻译，无需额外安装 Python、浏览器或 .NET 服务。Linux 使用系统 Python 3.8+、GTK 3、IBus、GStreamer，翻译使用独立 venv；运行库按 Python 版本选择，兼容新版 Ubuntu 的 Python 3.14。CMake 3.16 与 Ubuntu 20.04 自带 GCC 9 即可构建。
+程序和词库核心使用 C++17，界面使用原生 Win32、GDI+、Media Foundation。构建需要 CMake 3.20+、Ninja、MinGW-w64 GCC；内置独立 Python 3.12 运行库只用于整句翻译，无需额外安装 Python、浏览器或 .NET 服务。
 
 ```powershell
 .\EnglishAssistant.exe --quit
@@ -97,4 +80,4 @@ UIA 候选读取和翻译框查词在线程中运行，键盘回调只检查已�
 
 已执行双向词库、名词补充、整句排序、离线模板、未收录标记、自启动注册表开关、编号、方向键选择、窗口避让和内置文本读写检查，并检查原生界面。微软拼音在不同应用中的 Ctrl 选词、连续换选、鼠标输出和多屏交互仍需要实测；未来 Windows 更新、旧版 IME 和管理员程序可能需要适配。
 
-GitHub Actions 在 Ubuntu 20.04、22.04、24.04 容器中构建，并通过 Xvfb 和独立 D-Bus 会话验证实际 IBus / libpinyin 候选、中文输出、Ctrl 数字、方向键、失焦取消，以及 GTK 翻译框和自启动读写。容器测试不等同于完整 GNOME / Wayland 桌面实测；系统主题、候选面板排版和各应用仍可能存在差异。验证记录见 [Ubuntu compatibility](https://github.com/YYHSSR/EnglishAssistant/actions/workflows/linux.yml)。
+Windows 自动检查覆盖词库、候选布局与选择、整句翻译、任务取消和原生翻译框。另已实测 GIF 切帧和带音轨 MP4 的播放、隐藏暂停。完整微软拼音交互在各应用中仍需进一步实测。
