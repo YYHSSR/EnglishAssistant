@@ -1,0 +1,45 @@
+EnglishAssistant Non-Commercial License 1.0
+Copyright (c) 2026 YYHSSR
+SPDX-License-Identifier: LicenseRef-EnglishAssistant-NonCommercial-1.0
+
+1. Scope
+This license applies only to the original EnglishAssistant program source,
+original documentation, local phrase supplement, and the program executable.
+Third-party works listed in THIRD_PARTY.md are excluded and retain their own
+licenses and rights. In particular, this license does not restrict the Qingjian
+GPL-3.0-or-later glossary, the MIT-licensed JSON library, or HoYoverse assets.
+This project does not grant ownership or sublicense rights in game artwork.
+
+2. Permission
+You may use, copy, study, modify, and redistribute the covered material without
+charge solely for non-commercial purposes, including personal use and learning.
+You must retain this license and copyright notices in redistributed copies,
+identify your modifications, and distribute covered modifications under these
+same terms. No fee is due for the permissions granted by this license.
+
+3. Non-commercial restriction
+Without separate written permission from the copyright holder, you may not use
+the covered material for commercial purposes, including selling it, distributing
+it for payment, incorporating it in commercial products, offering paid services
+based on it, or monetizing its distribution. This restriction applies only to
+the original covered material and cannot restrict third-party rights.
+
+4. Warranty and liability
+THE COVERED MATERIAL IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDERS
+SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM USE,
+MODIFICATION OR DISTRIBUTION OF THE COVERED MATERIAL.
+
+5. Termination and other rights
+Permissions end automatically if you fail to comply with these terms. This
+license grants no rights in trademarks, third-party assets, or patents. It does
+not override third-party licenses or exceptions provided by applicable law.
+
+中文说明（英文条款为准）：
+本项目自编代码、文档、本地短句与程序可免费用于非商业用途，允许阅读、
+复制、修改和非商业分发；分发须保留许可及署名、标明修改，并沿用本条款。
+未经作者书面许可，不得销售、收费分发、纳入商业产品或提供收费服务。
+青简词库、JSON 库和原神角色素材不适用本许可证，各自保留原授权及权利。
+程序按现状提供，不承诺适用性或兼容性。联系方式：
+https://github.com/YYHSSR/EnglishAssistant

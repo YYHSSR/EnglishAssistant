@@ -1,0 +1,17 @@
+/work/
+/state/
+/AI/
+/SKILL/
+/personal.tsv
+/settings.ini
+/test-fixtures/
+/build/
+/package/
+*.saving
+*.log
+*.zip
+*.obj
+*.o
+*.a
+*.pdb
+*.dll

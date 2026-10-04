@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.md text eol=lf
+*.tsv text eol=lf
+*.ps1 text eol=crlf
+*.ico binary
+*.png binary
+*.exe binary
+data/glossary-en.tsv -text
