@@ -54,6 +54,7 @@ class AssistantEngine(IBus.Engine):
         self.password = False
         self.suppress_commit = False
         self.swallowed = set()
+        self.ctrl_keys = set()
         self.generation = 0
         self.revision = 0
         self.inner_path = self.connection.call_sync(
@@ -175,7 +176,11 @@ class AssistantEngine(IBus.Engine):
         release = bool(state & IBus.ModifierType.RELEASE_MASK)
         ctrl = bool(state & IBus.ModifierType.CONTROL_MASK)
         if keyval in (IBus.KEY_Control_L, IBus.KEY_Control_R):
-            if release and self.selected >= 0:
+            if release:
+                self.ctrl_keys.discard(keyval)
+            else:
+                self.ctrl_keys.add(keyval)
+            if release and not self.ctrl_keys and self.selected >= 0:
                 self.commit_english()
                 return True
             return False
@@ -210,7 +215,7 @@ class AssistantEngine(IBus.Engine):
             return False
 
     def commit_english(self):
-        if not self.focused or self.password or not (0 <= self.selected < len(self.options)):
+        if not self.focused or self.password or self.ui.paused or not (0 <= self.selected < len(self.options)):
             self.clear()
             return
         english = self.options[self.selected][1]
@@ -234,6 +239,7 @@ class AssistantEngine(IBus.Engine):
 
     def do_focus_out(self):
         self.revision += 1
+        self.ctrl_keys.clear()
         self.focused = False
         self.clear()
         self.inner('FocusOut')

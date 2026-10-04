@@ -9,6 +9,14 @@ if [ "$(id -u)" = 0 ]; then
     printf '%s\n' '请以普通桌面用户运行此脚本；安装依赖时会调用 sudo。'
     exit 1
 fi
+if [ -r /etc/os-release ]; then
+    . /etc/os-release
+    version_major=${VERSION_ID%%.*}
+    if [ "$ID" = ubuntu ] && [ "$version_major" -lt 20 ]; then
+        printf '%s\n' '最低支持 Ubuntu 20.04。'
+        exit 1
+    fi
+fi
 if ! command -v cmake >/dev/null 2>&1 || ! command -v g++ >/dev/null 2>&1 ||
    ! /usr/bin/python3 -c 'import gi; gi.require_version("IBus","1.0"); gi.require_version("Gtk","3.0"); from gi.repository import IBus,Gtk' >/dev/null 2>&1 ||
    [ ! -f /usr/share/ibus/component/libpinyin.xml ]; then

@@ -87,3 +87,5 @@ UIA 候选读取和翻译框查词在线程中运行，键盘回调只检查已�
 ## 验证范围
 
 已执行双向词库、名词补充、整句排序、离线模板、未收录标记、自启动注册表开关、编号、方向键选择、窗口避让和内置文本读写检查，并检查原生界面。微软拼音在不同应用中的 Ctrl 选词、连续换选、鼠标输出和多屏交互仍需要实测；未来 Windows 更新、旧版 IME 和管理员程序可能需要适配。
+
+GitHub Actions 在 Ubuntu 20.04、22.04、24.04 容器中构建，并通过 Xvfb 和独立 D-Bus 会话验证实际 IBus / libpinyin 候选、中文输出、Ctrl 数字、方向键、失焦取消，以及 GTK 翻译框和自启动读写。容器测试不等同于完整 GNOME / Wayland 桌面实测；系统主题、候选面板排版和各应用仍可能存在差异。验证记录见 [Ubuntu compatibility](https://github.com/YYHSSR/EnglishAssistant/actions/workflows/linux.yml)。
