@@ -44,6 +44,9 @@ int main(int argc,char**argv){
         snapshot.candidates={{3,L"逆",false,{L"reverse",L"contrary"}},{7,L"拟",false,{L"plan",L"intend"}}};
         auto options=english_options(snapshot);
         require(options.size()==4&&options[0].candidate==3&&options[1].sense==1&&options[2].candidate==7&&options[3].text==L"intend","Independent English numbering preserves native mapping");
+        Snapshot unsafe;unsafe.candidates={{1,L"我把英文输入进去后",false,{L"I [untranslated: 把] English",L"After I enter the English text."}},{2,L"翻译",false,{L"translate"}},{3,L"整句",false,{L"Translate the complete sentence."},false,true}};
+        auto safe=english_options(unsafe);require(safe.size()==3&&safe[0].candidate==3&&safe[1].candidate==1&&safe[1].sense==1,"Neural sentences ranked first; incomplete outputs filtered without corrupting native sense mapping");
+        require(!valid_english_output(L"I [untranslated: 把] English")&&valid_english_output(L"I entered the English text."),"Unknown marker never reaches English output");
         for(int i=0;i<8;i++)snapshot.candidates.push_back({9,L"测试",false,{std::to_wstring(i)}});
         options=english_options(snapshot);
         require(options.size()==12&&options[page_size].candidate==9&&options[page_size].text==L"5","Second page maps ninth offset correctly");

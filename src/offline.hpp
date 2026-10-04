@@ -2,6 +2,7 @@
 #include "dictionary.hpp"
 #include <functional>
 namespace ea {
+bool valid_english_output(std::wstring_view text);
 struct OfflineReply {std::wstring text;bool exact=false;std::vector<std::wstring> unknown;};
 struct ForwardReply {std::vector<std::wstring> senses;bool reference=false;std::vector<std::wstring> unknown;};
 class OfflineTranslator {

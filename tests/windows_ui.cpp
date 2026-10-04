@@ -19,6 +19,7 @@ void print_client(HWND window,HDC dc){
 void capture(HWND window,const std::filesystem::path& path){
     RECT area{};GetClientRect(window,&area);auto screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=area.right;info.bmiHeader.biHeight=-area.bottom;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
     void* bits=nullptr;auto bitmap=CreateDIBSection(screen,&info,DIB_RGB_COLORS,&bits,nullptr,0);auto old=SelectObject(dc,bitmap);print_client(window,dc);GdiFlush();
+    if(path.extension()==L".png"){if(!ea::save_png(bitmap,path.wstring()))throw std::runtime_error("PNG capture failed");SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);return;}
     BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);header.bfSize=header.bfOffBits+area.right*area.bottom*4;std::ofstream file(path,std::ios::binary);file.write((const char*)&header,sizeof(header));file.write((const char*)&info.bmiHeader,sizeof(BITMAPINFOHEADER));file.write((const char*)bits,area.right*area.bottom*4);
     SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);
 }
@@ -63,17 +64,28 @@ bool test_backgrounds(const std::wstring& root,ea::DictionaryProvider provider){
 }
 int main(int argc,char**argv){
     if(argc<2)return 2;CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+    bool documentation=argc==3&&std::string(argv[2])=="--docs";
     int result=0;
     {
-        auto root=ea::wide(argv[1]);auto dictionary=std::make_shared<ea::OfflineTranslator>();if(!dictionary->open(root))return 1;
-        HWND window=ea::show_translation_box(GetModuleHandleW(nullptr),nullptr,[&]{return dictionary;},root,false);
+        auto root=ea::wide(argv[1]);auto dictionary=std::make_shared<ea::OfflineTranslator>();if(!dictionary->open(root,!documentation))return 1;
+        std::wstring appearance;if(documentation){auto folder=std::filesystem::path(root)/L"work/docs-appearance";std::filesystem::create_directories(folder);appearance=folder.wstring();WritePrivateProfileStringW(L"background_translation",L"path",(std::filesystem::path(root)/L"resources/backgrounds/moon-garden.png").c_str(),(folder/L"settings.ini").c_str());}
+        HWND window=ea::show_translation_box(GetModuleHandleW(nullptr),nullptr,[&]{return dictionary;},root,false,appearance);
         auto input=GetDlgItem(window,201),output=GetDlgItem(window,202),button=GetDlgItem(window,203);
-        SetWindowTextW(input,L"Stateless GitHub App installation tokens rolled out");SendMessageW(button,BM_CLICK,0,0);
+        SetWindowTextW(input,L"Stateless GitHub App installation tokens rolled out");
         if(!wait(button,30))return 1;wchar_t text[1024]{};GetWindowTextW(output,text,1024);
         std::wstring translated=text;if(translated.find(L"无状态")==std::wstring::npos||translated.find(L"令牌")==std::wstring::npos)result=1;
         std::cout<<ea::utf8(translated)<<"\n";
         std::filesystem::create_directories(std::filesystem::path(root)/L"work");capture(window,std::filesystem::path(root)/L"work/translation-background.bmp");
-        SetWindowTextW(input,std::wstring(4000,L'a').c_str());SendMessageW(button,BM_CLICK,0,0);auto start=std::chrono::steady_clock::now();ea::close_translation_box();if(std::chrono::steady_clock::now()-start>std::chrono::seconds(5))result=1;
+        if(documentation){std::filesystem::create_directories(std::filesystem::path(root)/L"resources/screenshots");capture(window,std::filesystem::path(root)/L"resources/screenshots/translation-en-zh.png");}
+        SetWindowTextW(input,L"我把英文输入进去后，希望自动翻译成中文。");if(!wait(button,30))return 1;GetWindowTextW(output,text,1024);std::wstring english=text;if(english.find(L"English")==std::wstring::npos||english.find(L"Chinese")==std::wstring::npos||english.find(L"[untranslated:")!=std::wstring::npos)result=1;
+        std::cout<<"Automatic Chinese -> English: "<<ea::utf8(english)<<"\n";
+        capture(window,std::filesystem::path(root)/L"work/translation-chinese-english.bmp");
+        if(documentation)capture(window,std::filesystem::path(root)/L"resources/screenshots/translation.png");
+        SendMessageW(window,WM_COMMAND,212,0);SetWindowTextW(input,L"development");if(!wait(button,30))return 1;GetWindowTextW(output,text,1024);if(std::wstring(text).find(L"发展")==std::wstring::npos)result=1;
+        SetWindowTextW(input,std::wstring(4000,L'a').c_str());SendMessageW(window,WM_TIMER,2,0);if(!IsWindowEnabled(input))result=1;
+        SetWindowTextW(input,L"Hello.");if(!wait(button,30))return 1;GetWindowTextW(output,text,1024);if(std::wstring(text).find(L"你好")==std::wstring::npos)result=1;
+        SetWindowTextW(input,L" \r\n ");GetWindowTextW(output,text,1024);if(text[0]||IsWindowEnabled(button))result=1;
+        SetWindowTextW(input,std::wstring(4000,L'a').c_str());SendMessageW(window,WM_TIMER,2,0);auto start=std::chrono::steady_clock::now();ea::close_translation_box();if(std::chrono::steady_clock::now()-start>std::chrono::seconds(5))result=1;
         if(!test_backgrounds(root,[&]{return dictionary;}))result=1;
         {
             const unsigned char gif[]={71,73,70,56,57,97,1,0,1,0,128,0,0,0,0,0,255,255,255,33,255,11,78,69,84,83,67,65,80,69,50,46,48,3,1,0,0,0,33,249,4,0,10,0,0,0,44,0,0,0,0,1,0,1,0,0,2,2,68,1,0,33,249,4,0,10,0,0,0,44,0,0,0,0,1,0,1,0,0,2,2,76,1,0,59};
@@ -81,7 +93,7 @@ int main(int argc,char**argv){
             ea::Background animation;if(!animation.load(gif_path.wstring(),false)||!animation.animated())return 1;animation.visible(true);
             auto dc=CreateCompatibleDC(nullptr);auto bitmap=CreateBitmap(4,4,1,32,nullptr);auto old=SelectObject(dc,bitmap);animation.paint(dc,{0,0,4,4});auto initial=GetPixel(dc,2,2);std::this_thread::sleep_for(std::chrono::milliseconds(110));animation.paint(dc,{0,0,4,4});auto next=GetPixel(dc,2,2);if(initial==next)result=1;SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);std::cout<<"GIF animation changed="<<(initial!=next)<<"\n";
         }
-        if(argc==3){ea::Background background;if(!background.load(ea::wide(argv[2]),true))return 1;background.mute(true);background.visible(true);std::this_thread::sleep_for(std::chrono::seconds(2));
+        if(argc==3&&!documentation){ea::Background background;if(!background.load(ea::wide(argv[2]),true))return 1;background.mute(true);background.visible(true);std::this_thread::sleep_for(std::chrono::seconds(2));
             auto dc=CreateCompatibleDC(nullptr);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=320;info.bmiHeader.biHeight=-180;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;void* bits=nullptr;auto bmp=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);auto old=SelectObject(dc,bmp);memset(bits,255,320*180*4);background.paint(dc,{0,0,320,180});GdiFlush();
             bool changed=false;auto* pixels=(unsigned char*)bits;for(int i=0;i<320*180*4;i++)if(pixels[i]!=255){changed=true;break;}bool sound=background.sound_playing();if(!changed||!sound||!background.error().empty())result=1;background.visible(false);std::this_thread::sleep_for(std::chrono::milliseconds(200));if(background.sound_playing())result=1;SelectObject(dc,old);DeleteObject(bmp);DeleteDC(dc);std::cout<<"Video decoded="<<changed<<" audio playing="<<sound<<" hidden paused="<<!background.sound_playing()<<" error="<<ea::utf8(background.error())<<"\n";
             auto folder=std::filesystem::path(root)/L"work/background-settings";auto config=(folder/L"settings.ini").wstring();WritePrivateProfileStringW(L"background_translation",L"path",ea::wide(argv[2]).c_str(),config.c_str());WritePrivateProfileStringW(L"background_translation",L"opacity",L"0",config.c_str());

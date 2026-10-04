@@ -192,6 +192,11 @@ void paint_glass(HDC dc,RECT r,int opacity,int radius){
     int d=std::max(1,std::min({radius*2,(int)(r.right-r.left),(int)(r.bottom-r.top)}));Gdiplus::GraphicsPath path;
     path.AddArc(r.left,r.top,d,d,180,90);path.AddArc(r.right-d,r.top,d,d,270,90);path.AddArc(r.right-d,r.bottom-d,d,d,0,90);path.AddArc(r.left,r.bottom-d,d,d,90,90);path.CloseFigure();g.FillPath(&brush,&path);
 }
+bool save_png(HBITMAP bitmap,const std::wstring& path){
+    runtime();UINT count=0,bytes=0;if(Gdiplus::GetImageEncodersSize(&count,&bytes)!=Gdiplus::Ok||!bytes)return false;
+    std::vector<BYTE> storage(bytes);auto* encoders=(Gdiplus::ImageCodecInfo*)storage.data();if(Gdiplus::GetImageEncoders(count,bytes,encoders)!=Gdiplus::Ok)return false;
+    Gdiplus::Bitmap image(bitmap,nullptr);for(UINT i=0;i<count;++i)if(wcscmp(encoders[i].MimeType,L"image/png")==0)return image.Save(path.c_str(),&encoders[i].Clsid,nullptr)==Gdiplus::Ok;return false;
+}
 namespace {
 HWND settings_windows[2]{};
 struct Settings {

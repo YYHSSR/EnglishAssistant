@@ -3,6 +3,7 @@
 #include <cwctype>
 #include <fstream>
 namespace ea {
+bool valid_english_output(std::wstring_view text){return !text.empty()&&text.find(L"[untranslated:")==std::wstring_view::npos&&text.find(L"〔未收录：")==std::wstring_view::npos;}
 std::wstring OfflineTranslator::normalize(std::wstring_view text){
     std::wstring result;bool space=false;
     for(wchar_t c:text){if(iswspace(c)){space=!result.empty();continue;}if(space){result+=L' ';space=false;}result+=c>=L'A'&&c<=L'Z'?c-L'A'+L'a':c;}
@@ -86,12 +87,13 @@ ForwardReply OfflineTranslator::translate_to_english(const std::wstring& text)co
             }
         }
         for(size_t i=0;i<n;){
-            if(parts[i].unknown){size_t begin=i;while(i<n&&parts[i].unknown)++i;auto gap=clause.substr(begin,i-begin);reply.unknown.push_back(gap);append(L"[untranslated: "+gap+L"]");}
+            if(parts[i].unknown){size_t begin=i;while(i<n&&parts[i].unknown)++i;reply.unknown.push_back(clause.substr(begin,i-begin));}
             else{append(parts[i].translation);i+=parts[i].length;}
         }
         reply.reference=true;at=end;
     }
-    if(!output.empty())reply.senses={std::move(output)};
+    // Preserve diagnostics, but never expose a sentence with missing content.
+    if(!output.empty()&&reply.unknown.empty())reply.senses={std::move(output)};
     return reply;
 }
 std::wstring OfflineTranslator::chinese_entry(const std::wstring& text)const{

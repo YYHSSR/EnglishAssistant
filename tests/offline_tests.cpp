@@ -11,7 +11,7 @@ int main(int argc,char**argv){try{
     auto r=t.translate_to_english(L"趋于完美了");check(!r.reference&&r.senses[0]==L"It is approaching perfection.","Screenshot sentence");
     r=t.translate_to_english(L"趋于稳定了");check(!r.senses.empty()&&!r.reference,"Productive template");
     r=t.translate_to_english(L"电脑软件设计开发流程");check(r.reference&&!r.senses.empty()&&r.unknown.empty(),"Unlisted sentence uses known words");
-    r=t.translate_to_english(L"电脑龘龘软件");check(r.reference&&!r.senses.empty()&&r.unknown==std::vector<std::wstring>{L"龘龘"}&&r.senses[0].find(L"[untranslated:")!=std::wstring::npos,"No silent unknown loss");
+    r=t.translate_to_english(L"电脑龘龘软件");check(r.reference&&r.senses.empty()&&r.unknown==std::vector<std::wstring>{L"龘龘"},"Incomplete composition cannot become output; gaps retained as diagnostics");
     r=t.translate_to_english(L"我正在开会。请稍等。");check(!r.senses.empty()&&r.senses[0].find(L".")!=std::wstring::npos,"Clause punctuation");
     check(t.translate_to_english(L" \n ").senses.empty(),"Blank has no output");
     check(t.translate_to_english(std::wstring(8001,L'中')).senses.empty(),"Length guard");

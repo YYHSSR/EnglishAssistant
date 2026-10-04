@@ -1,15 +1,16 @@
 #include "options.hpp"
+#include "offline.hpp"
 #include <algorithm>
 namespace ea {
 std::vector<EnglishOption> english_options(const Snapshot& s){
     std::vector<EnglishOption> options;
     std::vector<const Candidate*> ordered;
     for(const auto&candidate:s.candidates)ordered.push_back(&candidate);
-    if(std::any_of(ordered.begin(),ordered.end(),[](const Candidate*c){return c->word.size()>=4&&!c->senses.empty();}))
-        std::stable_sort(ordered.begin(),ordered.end(),[](const Candidate*a,const Candidate*b){return a->word.size()>b->word.size();});
+    if(std::any_of(ordered.begin(),ordered.end(),[](const Candidate*c){return c->neural||(c->word.size()>=4&&!c->senses.empty());}))
+        std::stable_sort(ordered.begin(),ordered.end(),[](const Candidate*a,const Candidate*b){return a->neural!=b->neural?a->neural:a->word.size()>b->word.size();});
     for(const auto*item:ordered){const auto&candidate=*item;
         for(size_t sense=0;sense<candidate.senses.size();++sense)
-            options.push_back({candidate.number,(int)sense,candidate.word,candidate.senses[sense],candidate.reference});
+            if(valid_english_output(candidate.senses[sense]))options.push_back({candidate.number,(int)sense,candidate.word,candidate.senses[sense],candidate.reference,candidate.neural});
     }
     return options;
 }

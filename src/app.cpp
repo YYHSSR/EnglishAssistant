@@ -7,6 +7,7 @@
 #include "translation_box.hpp"
 #include "documents.hpp"
 #include "background.hpp"
+#include "sentence.hpp"
 #include <gdiplus.h>
 #include <shellapi.h>
 #include <windowsx.h>
@@ -97,7 +98,7 @@ Result commit(CandidateReader& reader,const Choice& request){
     auto fresh=reader.read(old.epoch);
     if(!same_candidates(old,fresh)||!still_valid(old)||!reader.focus_matches(old))return Changed;
     auto c=find_candidate(old,request.number);
-    if(!c||request.sense<0||request.sense>=(int)c->senses.size())return Changed;
+    if(!c||request.sense<0||request.sense>=(int)c->senses.size()||!valid_english_output(c->senses[request.sense]))return Changed;
     if(!send_escape())return OutputFailed;
     start=GetTickCount64();int confirmed=0;
     while(GetTickCount64()-start<1000){
@@ -120,6 +121,7 @@ void work(){
     if(FAILED(hr)){PostMessageW(main_window,RESULT,ReaderFailed,0);return;}
     {
         CandidateReader reader;
+        SentenceEngine sentences(folder,[]{if(!stopping)notify_worker();});
         if(!reader.available()){PostMessageW(main_window,RESULT,ReaderFailed,0);}
         bool active=false;uint64_t seen=0;
         while(reader.available() && !stopping){
@@ -130,16 +132,24 @@ void work(){
                 request=std::move(choice);choice.reset();
             }
             if(request){
+                sentences.select(L"");
                 auto result=commit(reader,*request);publish({});PostMessageW(main_window,RESULT,result,0);active=false;continue;
             }
             if(reload_personal.exchange(false)){
                 auto replacement=std::make_shared<OfflineTranslator>();
                 if(replacement->open(folder)){std::lock_guard<std::mutex>lock(mutex);dictionary=std::move(replacement);PostMessageW(main_window,RESULT,Reloaded,0);}
             }
-            if(paused){if(active)publish({});active=false;continue;}
+            if(paused){sentences.select(L"");if(active)publish({});active=false;continue;}
             uint64_t version=epoch.load();auto s=reader.read(version);
-            if(version!=epoch.load()||paused){publish({});active=false;continue;}
-            auto local=current_dictionary();for(auto& c:s.candidates){auto reply=local->translate_to_english(c.word);c.senses=std::move(reply.senses);c.reference=reply.reference;}
+            if(version!=epoch.load()||paused){sentences.select(L"");publish({});active=false;continue;}
+            auto local=current_dictionary();Candidate* sentence=nullptr;
+            for(auto& c:s.candidates){c.senses=local->to_english(c.word);c.senses.erase(std::remove_if(c.senses.begin(),c.senses.end(),[](const auto& value){return !valid_english_output(value);}),c.senses.end());if(!sentence||c.word.size()>sentence->word.size())sentence=&c;}
+            if(sentence&&sentence->word.size()>=4&&sentence->senses.empty()){
+                sentences.select(sentence->word);auto translated=sentences.lookup(sentence->word);
+                if(!translated)s.translation_status=L"正在准备整句英文… · 单词释义仍可选择";
+                else if(!translated->error.empty())s.translation_status=L"整句翻译失败 · 可在翻译框中分段重试";
+                else{sentence->senses={translated->text};sentence->neural=true;}
+            }else sentences.select(L"");
             s.time=GetTickCount64();active=s.valid();publish(std::move(s));
         }
     }
@@ -213,10 +223,11 @@ std::wstring footer(){
     int missing=0;for(const auto&c:shown.candidates)if(c.senses.empty())++missing;
     std::wstring text;
     if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  方向键跨页选词";
-    if(missing){if(!text.empty())text+=L"    ";text+=L"部分短句未收录 · 可添加到个人词表";}
+    if(!shown.translation_status.empty()){if(!text.empty())text+=L"    ";text+=shown.translation_status;}
+    else if(missing){if(!text.empty())text+=L"    ";text+=L"整句请先输入完整中文 · 段落可使用翻译框";}
     if(std::any_of(shown.candidates.begin(),shown.candidates.end(),[](const Candidate&c){return c.reference;})){
         if(!text.empty())text+=L"    ";
-        text+=L"词组参考 · 未知片段已标记";
+        text+=L"词组参考";
     }
     return text;
 }
@@ -284,8 +295,10 @@ void render(HDC dc,RECT client){
 void paint(HWND h){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);RECT client;GetClientRect(h,&client);render(dc,client);EndPaint(h,&ps);}
 bool render_preview(const std::wstring& path,int width){
     // Render sample content into a bitmap without opening a window or installing hooks.
-    auto local=current_dictionary();
-    shown.candidates={{1,L"托盘中增加一个选项",true,local->to_english(L"托盘中增加一个选项")},{2,L"托盘中",false,local->to_english(L"托盘中")},{3,L"托盘",false,local->to_english(L"托盘")},{4,L"托",false,local->to_english(L"托")}};
+    auto local=std::make_shared<OfflineTranslator>();if(!local->open(folder,false))return false;
+    candidate_opacity=40;candidate_background->load(folder+L"\\resources\\backgrounds\\morning-ripple.png",false);
+    std::atomic<bool> cancelled{false};auto sentence=neural_translate(folder,L"我把英文输入进去后希望自动翻译成中文",cancelled,TranslationDirection::ChineseToEnglish);if(!sentence.error.empty())return false;
+    shown.candidates={{1,L"我把英文输入进去后希望自动翻译成中文",true,{sentence.text},false,true},{2,L"发展",false,local->to_english(L"发展")},{3,L"翻译",false,local->to_english(L"翻译")}};
     displayed_options=english_options(shown);pending_selection=Choice{shown,1,0};
     displayed_flow=grouped_flow(displayed_options,measure_options(),0,page_capacity,width,scale_dpi);
     RECT client{0,0,width,displayed_flow.height+8};
@@ -294,7 +307,8 @@ bool render_preview(const std::wstring& path,int width){
     if(!bitmap){DeleteDC(dc);ReleaseDC(nullptr,screen);return false;}
     auto old=SelectObject(dc,bitmap);render(dc,client);GdiFlush();
     BITMAPFILEHEADER header{};header.bfType=0x4d42;header.bfOffBits=sizeof(header)+sizeof(BITMAPINFOHEADER);header.bfSize=header.bfOffBits+client.right*client.bottom*4;
-    std::ofstream file{std::filesystem::path(path),std::ios::binary};file.write((const char*)&header,sizeof(header));file.write((const char*)&info.bmiHeader,sizeof(BITMAPINFOHEADER));file.write((const char*)bits,client.right*client.bottom*4);bool ok=(bool)file;
+    bool ok=false;if(std::filesystem::path(path).extension()==L".png")ok=save_png(bitmap,path);
+    else{std::ofstream file{std::filesystem::path(path),std::ios::binary};file.write((const char*)&header,sizeof(header));file.write((const char*)&info.bmiHeader,sizeof(BITMAPINFOHEADER));file.write((const char*)bits,client.right*client.bottom*4);ok=(bool)file;}
     SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);return ok;
 }
 LRESULT CALLBACK popup_proc(HWND h,UINT m,WPARAM w,LPARAM l){
@@ -316,7 +330,7 @@ void menu(){
     epoch.fetch_add(1);shown={};pending_selection.reset();ShowWindow(popup,SW_HIDE);
     HMENU menu=CreatePopupMenu();AppendMenuW(menu,MF_STRING,1,paused?L"恢复英文候选":L"暂停英文候选");
     AppendMenuW(menu,MF_STRING|(startup_enabled(executable_path)?MF_CHECKED:0),10,L"开机自启动");
-    AppendMenuW(menu,MF_STRING,11,L"英文 → 中文翻译框");
+    AppendMenuW(menu,MF_STRING,11,L"双向自动翻译框");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
     AppendMenuW(menu,MF_STRING,12,L"翻译框背景…");AppendMenuW(menu,MF_STRING,13,L"英文选词框背景…");
     AppendMenuW(menu,MF_SEPARATOR,0,nullptr);AppendMenuW(menu,MF_STRING,8,L"退出");
@@ -328,9 +342,10 @@ void menu(){
     if(cmd==8)DestroyWindow(main_window);
 }
 bool visual_equal(const Snapshot&a,const Snapshot&b){
+    if(a.translation_status!=b.translation_status)return false;
     if(!a.valid()&&!b.valid())return true;
     if(!same_candidates(a,b)||memcmp(&a.bounds,&b.bounds,sizeof(RECT))!=0)return false;
-    for(size_t i=0;i<a.candidates.size();i++)if(a.candidates[i].selected!=b.candidates[i].selected||a.candidates[i].senses!=b.candidates[i].senses||a.candidates[i].reference!=b.candidates[i].reference)return false;
+    for(size_t i=0;i<a.candidates.size();i++)if(a.candidates[i].selected!=b.candidates[i].selected||a.candidates[i].senses!=b.candidates[i].senses||a.candidates[i].reference!=b.candidates[i].reference||a.candidates[i].neural!=b.candidates[i].neural)return false;
     return true;
 }
 LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
@@ -340,7 +355,7 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==UPDATE){Snapshot s;{std::lock_guard<std::mutex> lock(mutex);s=latest;}
         if(s.valid() && (s.epoch!=epoch.load()||paused||committing||!same_target(s)))s={};
         // Keep the displayed numbering stable while the user holds Ctrl.
-        if(ctrl_held&&shown.valid()&&s.valid()&&same_candidates(shown,s)){shown.time=s.time;return 0;}
+        if(ctrl_held&&!displayed_options.empty()&&shown.valid()&&s.valid()&&same_candidates(shown,s)){shown.time=s.time;return 0;}
         if(!same_candidates(shown,s)){page=0;pending_selection.reset();}
         bool changed=!visual_equal(shown,s);shown=std::move(s);
         if(changed){displayed_options=english_options(shown);hover=-1;}

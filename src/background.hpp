@@ -21,6 +21,7 @@ std::wstring background_path(const std::wstring& root,BackgroundKind kind);
 bool background_sound(const std::wstring& root,BackgroundKind kind);
 int background_opacity(const std::wstring& root,BackgroundKind kind);
 void paint_glass(HDC dc,RECT bounds,int opacity,int radius=10);
+bool save_png(HBITMAP bitmap,const std::wstring& path);
 HWND show_background_settings(HINSTANCE instance,HWND owner,const std::wstring& root,BackgroundKind kind,bool visible=true);
 void close_background_settings();
 }
