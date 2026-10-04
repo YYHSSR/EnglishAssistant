@@ -88,11 +88,29 @@ void Dictionary::load_phrases(const std::wstring& path){
     }
 }
 std::vector<std::wstring> Dictionary::lookup(std::wstring_view word)const{
-    auto personal=personal_.find(std::wstring(word));if(personal!=personal_.end())return personal->second;
-    auto phrase=phrases_.find(std::wstring(word));if(phrase!=phrases_.end())return phrase->second;
+    std::wstring word_key(word);
+    auto personal=personal_.find(word_key);if(personal!=personal_.end())return personal->second;
+    auto phrase=phrases_.find(word_key);if(phrase!=phrases_.end())return phrase->second;
     auto key=utf8(word);
     auto it=std::lower_bound(index_.begin(),index_.end(),std::string_view(key),[&](const Line& l,std::string_view k){return std::string_view(bytes_+l.start,l.tab-l.start)<k;});
-    if(it==index_.end()||std::string_view(bytes_+it->start,it->tab-it->start)!=key)return {};
-    return parse_senses(std::string_view(bytes_+it->tab+1,it->end-it->tab-1));
+    std::vector<std::wstring> senses;
+    if(it!=index_.end()&&std::string_view(bytes_+it->start,it->tab-it->start)==key)
+        senses=parse_senses(std::string_view(bytes_+it->tab+1,it->end-it->tab-1));
+    auto extra=supplements_.find(word_key);
+    if(extra!=supplements_.end())for(const auto& sense:extra->second){
+        if(senses.size()>=8)break;
+        if(std::find(senses.begin(),senses.end(),sense)==senses.end())senses.push_back(sense);
+    }
+    return senses;
+}
+void Dictionary::load_supplements(const std::wstring& path){
+    supplements_.clear();std::ifstream in{std::filesystem::path(path)};std::string line;
+    while(std::getline(in,line)){
+        if(line.size()>=3&&line.substr(0,3)=="\xef\xbb\xbf")line.erase(0,3);
+        if(line.empty()||line.front()=='#')continue;
+        auto tab=line.find('\t');if(tab==std::string::npos)continue;
+        auto word=wide(std::string_view(line).substr(0,tab));auto senses=parse_senses(std::string_view(line).substr(tab+1));
+        if(!word.empty()&&!senses.empty())supplements_[std::move(word)]=std::move(senses);
+    }
 }
 }

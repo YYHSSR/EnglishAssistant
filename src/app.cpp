@@ -1,6 +1,7 @@
 #include "candidates.hpp"
 #include "dictionary.hpp"
 #include "options.hpp"
+#include "layout.hpp"
 #include "online.hpp"
 #include "documents.hpp"
 #include <shellapi.h>
@@ -20,7 +21,7 @@
 
 namespace {
 using namespace ea;
-constexpr UINT UPDATE=WM_APP+1,CHOOSE=WM_APP+2,RESULT=WM_APP+3,INVALIDATE=WM_APP+4,TRAY=WM_APP+5,CONFIRM=WM_APP+6,PAGE=WM_APP+7,DOCUMENT=WM_APP+8;
+constexpr UINT UPDATE=WM_APP+1,CHOOSE=WM_APP+2,RESULT=WM_APP+3,INVALIDATE=WM_APP+4,TRAY=WM_APP+5,CONFIRM=WM_APP+6,NAVIGATE=WM_APP+7,DOCUMENT=WM_APP+8;
 constexpr ULONG_PTR OWN_INPUT=0x45415353495354ULL;
 enum Result {Success=0,Changed=1,CancelFailed=2,OutputFailed=3,ReaderFailed=4,Reloaded=5};
 HINSTANCE instance;
@@ -146,7 +147,8 @@ LRESULT CALLBACK keyboard(int code,WPARAM w,LPARAM l){
     if(key->dwExtraInfo==OWN_INPUT)return CallNextHookEx(key_hook,code,w,l);
     DWORD vk=key->vkCode;
     bool up=w==WM_KEYUP||w==WM_SYSKEYUP;
-    if(vk<256 && swallowed[vk]){if(up)swallowed[vk]=false;return 1;}
+    bool arrow=vk==VK_UP||vk==VK_DOWN||vk==VK_LEFT||vk==VK_RIGHT;
+    if(vk<256&&swallowed[vk]){if(up){swallowed[vk]=false;return 1;}if(!arrow)return 1;}
     if(vk==VK_CONTROL||vk==VK_LCONTROL||vk==VK_RCONTROL){
         if(up){ctrl_held=(GetAsyncKeyState(vk==VK_RCONTROL?VK_LCONTROL:VK_RCONTROL)&0x8000)!=0;if(!ctrl_held)PostMessageW(main_window,CONFIRM,0,0);}else ctrl_held=true;
     }
@@ -156,13 +158,14 @@ LRESULT CALLBACK keyboard(int code,WPARAM w,LPARAM l){
     bool win=(GetAsyncKeyState(VK_LWIN)&0x8000)||(GetAsyncKeyState(VK_RWIN)&0x8000);
     int number=vk>='1'&&vk<='9'?(int)(vk-'0'):(vk>=VK_NUMPAD1&&vk<=VK_NUMPAD9?(int)(vk-VK_NUMPAD0):0);
     bool shift=(GetAsyncKeyState(VK_SHIFT)&0x8000)!=0;
-    if(control && !alt && !shift && !win && !committing && shown.valid() && shown.epoch==epoch.load() && GetTickCount64()-shown.time<700 && same_target(shown)){
+    if(control && !alt && !shift && !win && !committing && IsWindowVisible(popup) && shown.valid() && shown.epoch==epoch.load() && GetTickCount64()-shown.time<700 && same_target(shown)){
         int index=page*page_capacity+number-1;
         if(number && index<(int)displayed_options.size()){
             swallowed[vk]=true;PostMessageW(main_window,CHOOSE,number,-1);return 1;
         }
-        if((vk==VK_LEFT||vk==VK_RIGHT)&&(int)displayed_options.size()>page_capacity){swallowed[vk]=true;PostMessageW(main_window,PAGE,vk==VK_RIGHT?1:0,0);return 1;}
+        if(arrow&&!displayed_options.empty()){swallowed[vk]=true;PostMessageW(main_window,NAVIGATE,(vk==VK_DOWN||vk==VK_RIGHT)?1:0,0);return 1;}
     }
+    if(vk<256&&swallowed[vk])return 1;
     if(vk!=VK_CONTROL&&vk!=VK_LCONTROL&&vk!=VK_RCONTROL&&vk!=VK_SHIFT&&vk!=VK_LSHIFT&&vk!=VK_RSHIFT&&vk!=VK_MENU&&vk!=VK_LMENU&&vk!=VK_RMENU&&vk!=VK_LWIN&&vk!=VK_RWIN)invalidate();
     return CallNextHookEx(key_hook,code,w,l);
 }
@@ -198,7 +201,7 @@ int visible_rows(){return std::max(0,std::min(page_capacity,(int)displayed_optio
 std::wstring footer(){
     int missing=0;for(const auto&c:shown.candidates)if(c.senses.empty())++missing;
     std::wstring text;
-    if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  Ctrl + ← / → 翻页";
+    if(page_count()>1)text=std::to_wstring(page+1)+L" / "+std::to_wstring(page_count())+L"  ·  方向键跨页选词";
     if(missing){if(!text.empty())text+=L"    ";text+=online->enabled?(online->quota_exhausted?L"联网补充暂不可用 · 仍可选择本地译文":L"部分短句暂无译文 · 联网补充已开启"):L"部分短句未收录 · 可在托盘开启联网补充";}
     return text;
 }
@@ -208,15 +211,12 @@ void position_popup(){
     MONITORINFO mi{};mi.cbSize=sizeof(mi);GetMonitorInfoW(monitor,&mi);
     UINT dpi=96,dpi_y=96;GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&dpi,&dpi_y);
     if(scale_dpi!=(int)dpi){scale_dpi=(int)dpi;fonts();}
-    page_capacity=std::clamp((MulDiv(mi.rcWork.bottom-mi.rcWork.top,96,scale_dpi)-80)/50,1,page_size);
-    page=std::clamp(page,0,page_count()-1);
-    int width=std::min(px(420),(int)(mi.rcWork.right-mi.rcWork.left-12));
-    int height=px(42+50*visible_rows()+(footer().empty()?8:30));
-    int left=std::clamp((int)shown.bounds.left,(int)mi.rcWork.left+6,(int)mi.rcWork.right-width-6);
-    int top=shown.bounds.bottom+px(6);
-    if(top+height>mi.rcWork.bottom)top=shown.bounds.top-height-px(6);
-    top=std::max(top,(int)mi.rcWork.top+6);
-    SetWindowPos(popup,HWND_TOPMOST,left,top,width,height,SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    bool missing=false;for(const auto&c:shown.candidates)if(c.senses.empty())missing=true;
+    auto layout=popup_layout(shown.bounds,mi.rcWork,scale_dpi,(int)displayed_options.size(),page,missing);
+    if(!layout.capacity){ShowWindow(popup,SW_HIDE);hits.clear();return;}
+    page_capacity=layout.capacity;page=layout.page;
+    const auto&r=layout.bounds;
+    SetWindowPos(popup,HWND_TOPMOST,r.left,r.top,r.right-r.left,r.bottom-r.top,SWP_NOACTIVATE|SWP_SHOWWINDOW);
     InvalidateRect(popup,nullptr,FALSE);
 }
 void draw_text(HDC dc,const std::wstring& text,RECT r,COLORREF color,HFONT font){
@@ -232,7 +232,7 @@ void render(HDC dc,RECT client){
     HBRUSH bg=CreateSolidBrush(RGB(249,250,254));FillRect(mem,&client,bg);DeleteObject(bg);
     DrawIconEx(mem,px(14),px(12),tray_icon,px(20),px(20),0,nullptr,DI_NORMAL);
     RECT title{px(42),px(8),client.right-px(12),px(35)};
-    draw_text(mem,L"英文  ·  按住 Ctrl 选数字，松开输出",title,RGB(85,92,112),small_font);
+    draw_text(mem,L"英文  ·  Ctrl + 数字 / 方向键，松开输出",title,RGB(85,92,112),small_font);
     hits.clear();
     for(int row=0;row<visible_rows();row++){
         const auto&o=displayed_options[page*page_capacity+row];int top=px(42+row*50);
@@ -256,8 +256,9 @@ void render(HDC dc,RECT client){
 void paint(HWND h){PAINTSTRUCT ps;HDC dc=BeginPaint(h,&ps);RECT client;GetClientRect(h,&client);render(dc,client);EndPaint(h,&ps);}
 bool render_preview(const std::wstring& path){
     // Render sample content into a bitmap without opening a window or installing hooks.
-    shown.candidates={{1,L"你来自哪里",true,{L"Where are you from?"}},{2,L"你来自",false,{L"You come from"}},{3,L"你来",false,{L"you come"}},{4,L"你",false,{L"you"}},{5,L"逆",false,{L"reverse",L"contrary"}},{6,L"尼",false,{L"nun"}},{7,L"拟",false,{L"plan",L"intend"}}};
-    displayed_options=english_options(shown);RECT client{0,0,420,500};
+    shown.candidates={{1,L"发展",true,dictionary.lookup(L"发展")},{2,L"罚站",false,dictionary.lookup(L"罚站")},{5,L"发",false,dictionary.lookup(L"发")},{6,L"法",false,dictionary.lookup(L"法")},{7,L"伐",false,dictionary.lookup(L"伐")}};
+    displayed_options=english_options(shown);pending_selection=Choice{shown,1,1};
+    RECT client{0,0,420,42+50*visible_rows()+8};
     HDC screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=client.right;info.bmiHeader.biHeight=client.bottom;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
     void* bits=nullptr;HBITMAP bitmap=CreateDIBSection(screen,&info,DIB_RGB_COLORS,&bits,nullptr,0);
     if(!bitmap){DeleteDC(dc);ReleaseDC(nullptr,screen);return false;}
@@ -320,7 +321,17 @@ LRESULT CALLBACK main_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         return 0;
     }
     if(m==INVALIDATE){shown={};pending_selection.reset();page=0;ShowWindow(popup,SW_HIDE);hits.clear();return 0;}
-    if(m==PAGE){pending_selection.reset();page=std::clamp(page+(w?1:-1),0,page_count()-1);hover=-1;position_popup();return 0;}
+    if(m==NAVIGATE){
+        if(!shown.valid()||!still_valid(shown)||committing||displayed_options.empty())return 0;
+        int current=-1;
+        if(pending_selection)for(size_t i=0;i<displayed_options.size();++i)
+            if(displayed_options[i].candidate==pending_selection->number&&displayed_options[i].sense==pending_selection->sense){current=(int)i;break;}
+        int index=move_selection(current,w?1:-1,(int)displayed_options.size(),page*page_capacity);
+        const auto&o=displayed_options[index];pending_selection=Choice{shown,o.candidate,o.sense};
+        page=index/page_capacity;hover=-1;position_popup();
+        if(!ctrl_held)PostMessageW(main_window,CONFIRM,0,0);
+        return 0;
+    }
     if(m==CHOOSE){
         if(!shown.valid()||shown.epoch!=epoch.load()||!same_target(shown)||paused||committing)return 0;
         if(l==-1){int index=page*page_capacity+(int)w-1;if(index<0||index>=(int)displayed_options.size())return 0;w=displayed_options[index].candidate;l=displayed_options[index].sense;}
@@ -376,6 +387,7 @@ int WINAPI wWinMain(HINSTANCE i,HINSTANCE,LPWSTR,int){
     LocalFree(args);
     if(!dictionary.open(folder+L"\\data\\glossary-en.tsv")){MessageBoxW(nullptr,L"无法读取 data\\glossary-en.tsv。请保留完整项目目录后运行。",L"EnglishAssistant",MB_OK|MB_ICONERROR);CloseHandle(singleton);return 1;}
     dictionary.load_phrases(folder+L"\\data\\phrases.tsv");
+    dictionary.load_supplements(folder+L"\\data\\supplements.tsv");
     CopyFileW((folder+L"\\personal.example.tsv").c_str(),(folder+L"\\personal.tsv").c_str(),TRUE);
     dictionary.load_personal(folder+L"\\personal.tsv");
     std::error_code directory_error;std::filesystem::create_directories(std::filesystem::path(folder)/L"state",directory_error);

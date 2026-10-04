@@ -1,0 +1,41 @@
+# 自编常用词形补充。与原词库合并、去重，保留原译词；词性前缀不写入输出。
+发展	n. development	n. growth
+开发	n. development
+学习	n. learning
+研究	n. research	n. study
+教育	n. education
+管理	n. management
+设计	n. design
+测试	n. testing	n. test
+分析	n. analysis
+讨论	n. discussion
+决定	n. decision
+选择	n. choice	n. selection
+建议	n. suggestion	n. advice
+解释	n. explanation
+创造	n. creation
+创新	n. innovation
+改进	n. improvement
+提高	n. improvement	n. increase
+增长	n. growth	n. increase
+进步	n. progress
+生产	n. production
+建设	n. construction
+保护	n. protection
+描述	n. description
+比较	n. comparison
+组织	n. organization
+支持	n. support
+帮助	n. help	n. assistance
+工作	n. work
+交流	n. communication	n. exchange
+翻译	n. translation
+表达	n. expression
+使用	n. use	n. usage
+应用	n. application
+操作	n. operation
+实现	n. implementation
+执行	n. execution
+安装	n. installation
+配置	n. configuration
+优化	n. optimization

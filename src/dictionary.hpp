@@ -19,6 +19,7 @@ class Dictionary {
     std::vector<Line> index_;
     std::unordered_map<std::wstring,std::vector<std::wstring>> personal_;
     std::unordered_map<std::wstring,std::vector<std::wstring>> phrases_;
+    std::unordered_map<std::wstring,std::vector<std::wstring>> supplements_;
     std::string error_;
 public:
     ~Dictionary();
@@ -28,6 +29,7 @@ public:
     bool open(const std::wstring& path);
     void load_personal(const std::wstring& path);
     void load_phrases(const std::wstring& path);
+    void load_supplements(const std::wstring& path);
     std::vector<std::wstring> lookup(std::wstring_view word) const;
     size_t size() const { return index_.size(); }
     size_t index_bytes() const { return index_.capacity()*sizeof(Line); }
