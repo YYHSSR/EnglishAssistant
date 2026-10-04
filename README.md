@@ -36,7 +36,7 @@ sh ./start.sh
 
 右键托盘可暂停、设置**开机自启动**、打开**英文 → 中文翻译框**、**翻译框背景…**、**英文选词框背景…**或退出。使用说明与两个个人词表菜单已移除。
 
-详细操作见 [使用说明](使用说明.md)。可以移动整个文件夹；保留 exe、data、models、runtime、translation、resources 与许可文件。首次启动自动创建 personal.tsv；升级不会覆盖已有词表。模型权重约 80 MB，Windows 翻译运行库压缩约 58 MB，初次翻译自动解压；只运行英文候选时不加载模型。
+详细操作见 [使用说明](使用说明.md)。可以移动整个文件夹；保留 exe、data、models、runtime、translation、resources 与许可文件。首次启动自动创建 personal.tsv；升级不会覆盖已有词表。模型权重约 80 MB，Windows 翻译运行库压缩约 60 MB，初次翻译自动解压；只运行英文候选时不加载模型。
 
 ## 离线词库与整句
 

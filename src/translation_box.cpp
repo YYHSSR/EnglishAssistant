@@ -59,7 +59,7 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         for(HWND control:{b->header,b->input,b->output,b->button,b->status})SendMessageW(control,WM_SETFONT,(WPARAM)b->font,TRUE);
         SendMessageW(b->input,EM_SETLIMITTEXT,8000,0);SendMessageW(b->output,EM_SETLIMITTEXT,128000,0);SetWindowSubclass(b->input,input_proc,1,(DWORD_PTR)b);layout(*b);b->reload();return 0;
     }
-    if(m==WM_SIZE){layout(*b);return 0;}
+    if(m==WM_SIZE){layout(*b);bool visible=w!=SIZE_MINIMIZED&&IsWindowVisible(h);b->background.visible(visible);KillTimer(h,1);if(visible&&b->background.animated())SetTimer(h,1,67,nullptr);return 0;}
     if(m==WM_SHOWWINDOW){b->background.visible(w!=0);if(w&&b->background.animated())SetTimer(h,1,67,nullptr);else KillTimer(h,1);}
     if(m==WM_TIMER){InvalidateRect(h,nullptr,FALSE);return 0;}
     if(m==WM_PAINT||m==WM_PRINTCLIENT){PAINTSTRUCT p{};auto dc=m==WM_PAINT?BeginPaint(h,&p):(HDC)w;RECT r{};GetClientRect(h,&r);FillRect(dc,&r,b->paper);b->background.paint(dc,r);if(m==WM_PAINT)EndPaint(h,&p);return 0;}

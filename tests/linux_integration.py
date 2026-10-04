@@ -41,7 +41,8 @@ print('PASS shared-core IPC', flush=True)
 IBus.init()
 bus = IBus.Bus()
 assert bus.is_connected()
-application = subprocess.Popen(['/usr/bin/python3', str(root / 'linux' / 'app.py'), '--ibus'])
+application = subprocess.Popen(['/usr/bin/python3', str(root / 'linux' / 'app.py'), '--ibus'],
+                               env=dict(os.environ, ENGLISHASSISTANT_NATIVE_PANEL='1'))
 try:
     wait(lambda: any(e.get_name() == 'EnglishAssistant' for e in bus.list_active_engines()), 'Engine did not register')
     context = bus.create_input_context('EnglishAssistantIntegration')

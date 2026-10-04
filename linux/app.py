@@ -46,7 +46,7 @@ class Application:
         self.translation_background = None
         self.panel = None
         # GNOME owns native Wayland panel positioning; retain that panel there.
-        self.custom_panel = 'x11' in type(Gdk.Display.get_default()).__name__.lower()
+        self.custom_panel = 'x11' in type(Gdk.Display.get_default()).__name__.lower() and os.environ.get('ENGLISHASSISTANT_NATIVE_PANEL') != '1'
         self.bus = IBus.Bus()
         if not self.bus.is_connected():
             raise RuntimeError('IBus 未运行。请先启动系统 IBus 输入法，或注销后重新登录。')

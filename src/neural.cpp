@@ -34,6 +34,7 @@ bool ensure_runtime(const std::wstring& root,const std::atomic<bool>& cancelled)
 NeuralReply neural_translate(const std::wstring& root,const std::wstring& text,const std::atomic<bool>& cancelled){
     NeuralReply reply;
     try{
+        if(cancelled){reply.error=L"翻译已取消";return reply;}
         if(!ensure_runtime(root,cancelled)){reply.error=L"本地翻译运行库缺失或解压失败，请保留 runtime/windows-runtime.zip。";return reply;}
         SECURITY_ATTRIBUTES security{sizeof(security),nullptr,TRUE};
         Handle input_read,input_write,output_read,output_write,error_sink;
