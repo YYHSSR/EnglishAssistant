@@ -22,7 +22,7 @@ Windows APIs and system DLLs provide the application UI and accessibility interf
 - Game / character: Genshin Impact / Vodyanitsa (沃雅妮莎).
 - Source: official HoYoWiki, https://wiki.hoyolab.com/m/genshin/entry/11702?lang=zh-cn .
 - Original asset: https://act-webstatic.hoyoverse.com/event-static-hoyowiki-admin/2026/09/21/e106be431d7c8ebbb9607b032fc66e3d_995961298610120887.png .
-- The original avatar was used as an identity reference for the generated full-body mascot `resources/pinyinshift.png` and the two fan backgrounds. The original avatar is not bundled. `resources/app.ico` converts/resizes the full-body mascot into Windows icon sizes, preserving its complete composition and transparency; generation notes are in `resources/ICON.md`.
+- The original avatar was used as an identity reference for the two fan backgrounds. The revised adult-proportion full-body mascot `resources/pinyinshift.png` uses `moon-garden.png` as its identity/style reference. The original avatar is not bundled. `resources/app.ico` converts/resizes the full-body mascot into Windows icon sizes, preserving its complete composition and transparency; generation notes are in `resources/ICON.md`.
 - © All rights reserved by miHoYo / HoYoverse. Other properties belong to their respective owners. This is an unofficial, non-commercial fan project; it is not endorsed by or affiliated with miHoYo / HoYoverse.
 - Game artwork is excluded from the program's source license. This project does not grant permission to redistribute or commercially use the artwork; rights remain with its owners. General official content guidance: https://www.hoyolab.com/article/142895 .
 

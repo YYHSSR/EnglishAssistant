@@ -5,7 +5,7 @@ namespace ea {
 FlowLayout grouped_flow(const std::vector<EnglishOption>& options,const std::vector<int>& text_widths,int first,int count,int width,int dpi){
     FlowLayout flow;
     auto px=[&](int value){return MulDiv(value,std::max(dpi,96),96);};
-    int top=px(42),left=px(18),right=width-px(18);
+    int top=px(10),left=px(18),right=width-px(18);
     if(right<=left)return flow;
     first=std::clamp(first,0,(int)options.size());
     int end=first+std::clamp(count,0,(int)options.size()-first);
@@ -25,10 +25,10 @@ FlowLayout grouped_flow(const std::vector<EnglishOption>& options,const std::vec
             x+=cell_width+px(6);
         }
         int bottom=y+row_height+px(6);
-        flow.groups.push_back({{px(10),top,width-px(10),bottom},options[begin].word+(options[begin].neural?L" · 整句译文":options[begin].reference?L" · 词组参考":L"")});
+        flow.groups.push_back({{px(10),top,width-px(10),bottom},options[begin].word});
         top=bottom+px(6);begin=next;
     }
-    flow.height=flow.groups.empty()?px(42):top-px(6);
+    flow.height=flow.groups.empty()?px(10):top-px(6);
     return flow;
 }
 PopupLayout popup_layout(RECT candidates,RECT work,int dpi,const std::vector<EnglishOption>& options,const std::vector<int>& text_widths,int page,bool has_status,int available_width){

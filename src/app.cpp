@@ -251,10 +251,6 @@ void render(HDC dc,RECT client){
     HDC mem=CreateCompatibleDC(dc);HBITMAP bmp=CreateCompatibleBitmap(dc,client.right,client.bottom);auto old=SelectObject(mem,bmp);
     HBRUSH bg=CreateSolidBrush(RGB(249,250,254));FillRect(mem,&client,bg);DeleteObject(bg);
     if(candidate_background)candidate_background->paint(mem,client);
-    RECT title{px(42),px(8),client.right-px(12),px(35)};
-    paint_glass(mem,{px(8),px(6),client.right-px(8),px(37)},candidate_opacity,px(8));
-    DrawIconEx(mem,px(14),px(12),tray_icon,px(20),px(20),0,nullptr,DI_NORMAL);
-    draw_text(mem,L"英文  ·  Ctrl + 数字 / 方向键，松开输出",title,RGB(85,92,112),small_font);
     hits.clear();
     for(const auto&group:displayed_flow.groups){
         paint_glass(mem,group.bounds,candidate_opacity,px(8));

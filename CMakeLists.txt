@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
-project(PinyinShift VERSION 0.9.2 LANGUAGES CXX)
+project(PinyinShift VERSION 0.9.3 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT WIN32)
   message(FATAL_ERROR "PinyinShift supports Windows only.")
 endif()
 enable_language(RC)
+set_property(SOURCE resources/app.rc APPEND PROPERTY OBJECT_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.ico"
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.manifest")
 add_library(assistant_core src/dictionary.cpp src/candidates.cpp src/options.cpp src/layout.cpp src/offline.cpp src/startup.cpp src/translation_box.cpp src/documents.cpp src/neural.cpp src/sentence.cpp src/background.cpp)
 target_include_directories(assistant_core PUBLIC src)
 target_compile_definitions(assistant_core PUBLIC UNICODE _UNICODE)

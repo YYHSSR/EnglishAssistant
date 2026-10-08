@@ -82,7 +82,7 @@ int main(int argc,char**argv){
         auto slice=grouped_flow(grouped,grouped_widths,1,2,420,96);
         require(slice.groups.size()==1&&slice.cells[0].index==1&&slice.cells[1].index==2,"Page split preserves native sense indices and group label");
         auto sentence_flow=grouped_flow({{1,0,L"长句",L"a long dictionary composition",true}},{1400},0,9,420,96);
-        require(sentence_flow.cells[0].bounds.bottom-sentence_flow.cells[0].bounds.top>30&&sentence_flow.groups[0].word.find(L"词组参考")!=std::wstring::npos,"Long sentence wraps and reference label remains explicit");
+        require(sentence_flow.cells[0].bounds.bottom-sentence_flow.cells[0].bounds.top>30,"Long sentence wraps within its Chinese group");
         auto compact=popup_layout({103,523,828,570},{0,0,1030,656},120,grouped,grouped_widths,0,true);
         require(compact.capacity==page_size&&compact.flow.cells.size()==4,"Grouped senses fit without unnecessary paging");
         auto scaled=grouped_flow(grouped,{120,220,110,320},0,9,1120,192);
