@@ -7,6 +7,7 @@
 #include <fstream>
 #include <filesystem>
 #include <commctrl.h>
+#include <dwmapi.h>
 namespace {
 bool wait(HWND button,int seconds){auto end=std::chrono::steady_clock::now()+std::chrono::seconds(seconds);while(!IsWindowEnabled(button)&&std::chrono::steady_clock::now()<end){MSG m;while(PeekMessageW(&m,nullptr,0,0,PM_REMOVE)){TranslateMessage(&m);DispatchMessageW(&m);}std::this_thread::sleep_for(std::chrono::milliseconds(5));}return IsWindowEnabled(button);}
 void print_client(HWND window,HDC dc){
@@ -79,7 +80,20 @@ int main(int argc,char**argv){
         auto root=ea::wide(argv[1]);auto dictionary=std::make_shared<ea::OfflineTranslator>();if(!dictionary->open(root,!documentation))return 1;
         std::wstring appearance;if(documentation){auto folder=std::filesystem::path(root)/L"work/docs-appearance";std::filesystem::create_directories(folder);appearance=folder.wstring();WritePrivateProfileStringW(L"background_translation",L"path",(std::filesystem::path(root)/L"resources/backgrounds/moon-garden.png").c_str(),(folder/L"settings.ini").c_str());}
         HWND window=ea::show_translation_box(GetModuleHandleW(nullptr),nullptr,[&]{return dictionary;},root,false,appearance);
-        auto input=GetDlgItem(window,201),output=GetDlgItem(window,202),button=GetDlgItem(window,203);
+        // Exercise DWM's native caption buttons offscreen without taking focus.
+        RECT original{};GetWindowRect(window,&original);SetWindowPos(window,nullptr,-20000,-20000,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);ShowWindow(window,SW_SHOWNOACTIVATE);DwmFlush();
+        RECT visible{};GetWindowRect(window,&visible);bool minimize=false,maximize=false,close=false;
+        // Probe actual hit areas to tolerate DPI virtualization and theme-specific
+        // caption metrics rather than assuming equal thirds of a rectangle.
+        for(int x=visible.right-240;x<visible.right;x+=3){auto hit=SendMessageW(window,WM_NCHITTEST,0,MAKELPARAM(x,visible.top+20));minimize|=hit==HTMINBUTTON;maximize|=hit==HTMAXBUTTON;close|=hit==HTCLOSE;}
+        bool caption_ok=minimize&&maximize&&close;
+        ShowWindow(window,SW_HIDE);SetWindowPos(window,nullptr,original.left,original.top,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);std::cout<<"Native caption button hit tests="<<caption_ok<<"\n";if(!caption_ok)result=1;
+        auto input=GetDlgItem(window,201),output=GetDlgItem(window,202),button=GetDlgItem(window,203),clear=GetDlgItem(window,206);
+        RECT clear_bounds{},direction_bounds{},copy_bounds{},input_bounds{};GetWindowRect(clear,&clear_bounds);GetWindowRect(GetDlgItem(window,204),&direction_bounds);GetWindowRect(button,&copy_bounds);GetWindowRect(input,&input_bounds);
+        if(clear_bounds.top!=direction_bounds.top||clear_bounds.top!=copy_bounds.top||clear_bounds.right>direction_bounds.left||direction_bounds.right>copy_bounds.left||copy_bounds.bottom>=input_bounds.top)result=1;
+        for(auto bounds:{clear_bounds,direction_bounds,copy_bounds})if(SendMessageW(window,WM_NCHITTEST,0,MAKELPARAM((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2))!=HTCLIENT)result=1;
+        RECT outer{};GetWindowRect(window,&outer);auto hit=[&](int x,int y){return SendMessageW(window,WM_NCHITTEST,0,MAKELPARAM(outer.left+x,outer.top+y));};
+        if(hit(1,1)!=HTTOPLEFT||hit((outer.right-outer.left)/2,1)!=HTTOP||hit((outer.right-outer.left)*3/4,20)!=HTCAPTION)result=1;
         SetWindowTextW(input,L"Stateless GitHub App installation tokens rolled out");
         if(!wait(button,30))return 1;wchar_t text[1024]{};GetWindowTextW(output,text,1024);
         std::wstring translated=text;if(translated.find(L"无状态")==std::wstring::npos||translated.find(L"令牌")==std::wstring::npos)result=1;
@@ -90,8 +104,12 @@ int main(int argc,char**argv){
         std::cout<<"Automatic Chinese -> English: "<<ea::utf8(english)<<"\n";
         capture(window,std::filesystem::path(root)/L"work/translation-chinese-english.bmp");
         if(documentation)capture(window,std::filesystem::path(root)/L"resources/screenshots/translation.png");
+        SendMessageW(clear,BM_CLICK,0,0);if(GetWindowTextLengthW(input)||GetWindowTextLengthW(output)||IsWindowEnabled(button))result=1;
         SendMessageW(window,WM_COMMAND,212,0);SetWindowTextW(input,L"development");if(!wait(button,30))return 1;GetWindowTextW(output,text,1024);if(std::wstring(text).find(L"发展")==std::wstring::npos)result=1;
         SetWindowTextW(input,std::wstring(4000,L'a').c_str());SendMessageW(window,WM_TIMER,2,0);if(!IsWindowEnabled(input))result=1;
+        SendMessageW(clear,BM_CLICK,0,0);auto clear_deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(500);
+        while(std::chrono::steady_clock::now()<clear_deadline){MSG message;while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){TranslateMessage(&message);DispatchMessageW(&message);}std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+        if(GetWindowTextLengthW(input)||GetWindowTextLengthW(output)||IsWindowEnabled(button)||!IsWindowEnabled(clear))result=1;
         SetWindowTextW(input,L"Hello.");if(!wait(button,30))return 1;GetWindowTextW(output,text,1024);if(std::wstring(text).find(L"你好")==std::wstring::npos)result=1;
         SetWindowTextW(input,L" \r\n ");GetWindowTextW(output,text,1024);if(text[0]||IsWindowEnabled(button))result=1;
         SetWindowTextW(input,std::wstring(4000,L'a').c_str());SendMessageW(window,WM_TIMER,2,0);auto start=std::chrono::steady_clock::now();ea::close_translation_box();if(std::chrono::steady_clock::now()-start>std::chrono::seconds(5))result=1;

@@ -2,6 +2,8 @@
 #include "neural.hpp"
 #include "background.hpp"
 #include <commctrl.h>
+#include <dwmapi.h>
+#include <windowsx.h>
 #include <mutex>
 #include <thread>
 #include <array>
@@ -15,7 +17,8 @@ std::atomic<ULONG_PTR> tickets{0};
 HWND translation_window=nullptr;
 struct State {std::mutex mutex;HWND window=nullptr;std::wstring text,status;uint64_t revision=0;std::atomic<bool> cancelled{false};};
 struct Box {
-    HWND window=nullptr,input=nullptr,output=nullptr,button=nullptr,direction=nullptr,tooltip=nullptr;
+    HWND window=nullptr,input=nullptr,output=nullptr,button=nullptr,direction=nullptr,clear=nullptr,tooltip=nullptr;
+    HICON icon=nullptr;
     std::wstring status;int input_wheel=0,output_wheel=0;
     HFONT font=nullptr;int dpi=96;DictionaryProvider provider;std::wstring root,appearance_root;Background background;HBRUSH paper=nullptr;
     std::shared_ptr<State> state=std::make_shared<State>();std::thread worker;
@@ -25,6 +28,7 @@ struct Box {
     HDC surface=nullptr;HBITMAP bitmap=nullptr;HGDIOBJ previous=nullptr;int width=0,height=0,opacity=40;bool dirty=true;
     ~Box(){for(auto& p:panels)if(p.brush)DeleteObject(p.brush);if(surface){SelectObject(surface,previous);DeleteObject(bitmap);DeleteDC(surface);}}
     int px(int value)const{return MulDiv(value,dpi,96);}
+    int title_height()const{return px(40);}
     void reload(bool media=true){if(media){background.load(background_path(appearance_root,BackgroundKind::Translation),background_sound(appearance_root,BackgroundKind::Translation));background.visible(IsWindowVisible(window));KillTimer(window,1);if(IsWindowVisible(window)&&background.animated())SetTimer(window,1,67,nullptr);}opacity=background_opacity(appearance_root,BackgroundKind::Translation);dirty=true;RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);}
 };
 RECT panel_rect(Box& b,HWND control){RECT r{};GetClientRect(control,&r);MapWindowPoints(control,b.window,(POINT*)&r,2);return r;}
@@ -40,7 +44,9 @@ void prepare_surface(Box& b){
         if(b.surface){SelectObject(b.surface,b.previous);DeleteObject(b.bitmap);DeleteDC(b.surface);}
         auto dc=GetDC(b.window);b.surface=CreateCompatibleDC(dc);b.bitmap=CreateCompatibleBitmap(dc,r.right,r.bottom);ReleaseDC(b.window,dc);b.previous=SelectObject(b.surface,b.bitmap);b.width=r.right;b.height=r.bottom;
     }
-    FillRect(b.surface,&r,b.paper);b.background.paint(b.surface,r);
+    FillRect(b.surface,&r,b.paper);auto scene=r;scene.top=b.title_height();b.background.paint(b.surface,scene);
+    if(b.icon)DrawIconEx(b.surface,b.px(8),b.px(10),b.icon,b.px(20),b.px(20),0,nullptr,DI_NORMAL);
+    auto old_font=SelectObject(b.surface,b.font);SetBkMode(b.surface,TRANSPARENT);SetTextColor(b.surface,RGB(65,94,110));RECT title{b.px(34),0,b.px(88),b.title_height()};DrawTextW(b.surface,L"翻译框",-1,&title,DT_LEFT|DT_VCENTER|DT_SINGLELINE);SelectObject(b.surface,old_font);
     for(auto& p:b.panels){auto area=panel_rect(b,p.control);paint_glass(b.surface,area,b.opacity,b.px(10));}
     // Native EDIT controls use the same composited pixels as the parent.
     // Pattern brushes preserve normal hit testing, IME, selection and clipboard behavior.
@@ -52,11 +58,12 @@ void prepare_surface(Box& b){
     b.dirty=false;
 }
 void layout(Box& b){
-    RECT r{};GetClientRect(b.window,&r);int margin=b.px(16),half=(r.bottom-b.px(76))/2;int content=(r.right-2*margin)*76/100;
-    MoveWindow(b.input,margin,margin,content,half,FALSE);
-    MoveWindow(b.button,margin+content-b.px(120),b.px(22)+half,b.px(120),b.px(30),FALSE);
-    MoveWindow(b.direction,margin,b.px(22)+half,b.px(180),b.px(30),FALSE);
-    MoveWindow(b.output,margin,b.px(60)+half,content,half,FALSE);
+    RECT r{};GetClientRect(b.window,&r);int margin=b.px(16),top=b.title_height(),half=(r.bottom-top-b.px(48))/2;int content=(r.right-2*margin)*76/100;
+    MoveWindow(b.clear,b.px(94),b.px(6),b.px(80),b.px(28),FALSE);
+    MoveWindow(b.direction,b.px(182),b.px(6),b.px(148),b.px(28),FALSE);
+    MoveWindow(b.button,b.px(338),b.px(6),b.px(92),b.px(28),FALSE);
+    MoveWindow(b.input,margin,top+margin,content,half,FALSE);
+    MoveWindow(b.output,margin,top+b.px(32)+half,content,half,FALSE);
     for(auto control:{b.input,b.output}){RECT area{};GetClientRect(control,&area);InflateRect(&area,-b.px(10),-b.px(8));SendMessageW(control,EM_SETRECTNP,0,(LPARAM)&area);}
     b.dirty=true;RedrawWindow(b.window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
 }
@@ -105,6 +112,28 @@ void direction_menu(Box& b){
     auto menu=CreatePopupMenu();for(int mode=0;mode<3;++mode)AppendMenuW(menu,MF_STRING|(b.direction_mode==mode?MF_CHECKED:0),211+mode,mode==1?L"英文 → 中文":mode==2?L"中文 → 英文":L"自动识别方向");
     RECT area{};GetWindowRect(b.direction,&area);int chosen=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,area.left,area.bottom,0,b.window,nullptr);DestroyMenu(menu);if(chosen>=211&&chosen<=213)set_direction(b,chosen-211);
 }
+void clear_text(Box& b){
+    // WM_SETTEXT schedules a new revision, clears the output and cancels any
+    // pending/running translation, so a late reply cannot restore old text.
+    SetWindowTextW(b.input,L"");b.input_wheel=b.output_wheel=0;SendMessageW(b.input,EM_SETSEL,0,0);SetFocus(b.input);
+}
+void extend_frame(Box& b){MARGINS margins{1,1,b.title_height(),1};DwmExtendFrameIntoClientArea(b.window,&margins);}
+LRESULT frame_hit(Box& b,LPARAM position){
+    POINT p{GET_X_LPARAM(position),GET_Y_LPARAM(position)};ScreenToClient(b.window,&p);RECT area{};GetClientRect(b.window,&area);
+    if(!IsZoomed(b.window)){
+        int border=GetSystemMetricsForDpi(SM_CXSIZEFRAME,b.dpi)+GetSystemMetricsForDpi(SM_CXPADDEDBORDER,b.dpi);
+        bool left=p.x<border,right=p.x>=area.right-border,top=p.y<border,bottom=p.y>=area.bottom-border;
+        if(top)return left?HTTOPLEFT:right?HTTOPRIGHT:HTTOP;
+        if(bottom)return left?HTBOTTOMLEFT:right?HTBOTTOMRIGHT:HTBOTTOM;
+        if(left)return HTLEFT;
+        if(right)return HTRIGHT;
+    }
+    if(p.y<b.title_height()){
+        for(auto control:{b.clear,b.direction,b.button}){auto bounds=panel_rect(b,control);if(PtInRect(&bounds,p))return HTCLIENT;}
+        return p.x<b.px(32)?HTSYSMENU:HTCAPTION;
+    }
+    return HTCLIENT;
+}
 LRESULT CALLBACK input_proc(HWND h,UINT m,WPARAM w,LPARAM l,UINT_PTR,DWORD_PTR data){
     if(m==WM_MOUSEWHEEL){
         auto& b=*(Box*)data;auto& remainder=GetDlgCtrlID(h)==201?b.input_wheel:b.output_wheel;
@@ -126,20 +155,31 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     auto*b=(Box*)GetWindowLongPtrW(h,GWLP_USERDATA);
     if(m==WM_NCCREATE){b=(Box*)((CREATESTRUCTW*)l)->lpCreateParams;b->window=h;b->state->window=h;SetWindowLongPtrW(h,GWLP_USERDATA,(LONG_PTR)b);}
     if(!b)return DefWindowProcW(h,m,w,l);
+    if(m==WM_NCCALCSIZE&&w){
+        // Keep the normal resize/minimize/maximize styles, but use their caption
+        // space for one toolbar row. DWM still owns the system caption buttons.
+        if(IsZoomed(h)){auto* area=&((NCCALCSIZE_PARAMS*)l)->rgrc[0];int border=GetSystemMetricsForDpi(SM_CXSIZEFRAME,b->dpi)+GetSystemMetricsForDpi(SM_CXPADDEDBORDER,b->dpi);InflateRect(area,-border,-border);}return 0;
+    }
+    if(m==WM_NCHITTEST){LRESULT result=0;if(DwmDefWindowProc(h,m,w,l,&result))return result;return frame_hit(*b,l);}
+    if(m==WM_NCMOUSEMOVE||m==WM_NCMOUSELEAVE){LRESULT result=0;if(DwmDefWindowProc(h,m,w,l,&result))return result;}
+    if(m==WM_NCACTIVATE)return DefWindowProcW(h,m,w,-1);
+    if(m==WM_ACTIVATE){extend_frame(*b);b->dirty=true;RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);}
     if(m==WM_CREATE){
         auto instance=(HINSTANCE)GetWindowLongPtrW(h,GWLP_HINSTANCE);b->dpi=(int)GetDpiForWindow(h);b->paper=CreateSolidBrush(RGB(248,252,254));
         b->font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");
+        b->icon=(HICON)LoadImageW(instance,MAKEINTRESOURCEW(101),IMAGE_ICON,32,32,LR_SHARED);
         b->engine=std::make_unique<NeuralTranslator>(b->root);
         DWORD style=WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_MULTILINE|ES_AUTOVSCROLL;
         b->input=CreateWindowExW(0,L"EDIT",L"",style,0,0,0,0,h,(HMENU)201,instance,nullptr);
         b->output=CreateWindowExW(0,L"EDIT",L"",style|ES_READONLY,0,0,0,0,h,(HMENU)202,instance,nullptr);
         b->button=CreateWindowW(L"BUTTON",L"复制译文",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,h,(HMENU)203,instance,nullptr);EnableWindow(b->button,FALSE);
         b->direction=CreateWindowW(L"BUTTON",L"自动识别方向 ▾",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,h,(HMENU)204,instance,nullptr);
+        b->clear=CreateWindowW(L"BUTTON",L"一键清除",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,h,(HMENU)206,instance,nullptr);
         b->tooltip=CreateWindowExW(WS_EX_TOPMOST,TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_ALWAYSTIP,0,0,0,0,h,nullptr,instance,nullptr);
         TOOLINFOW tip{};tip.cbSize=sizeof(tip);tip.uFlags=TTF_IDISHWND|TTF_SUBCLASS;tip.hwnd=h;tip.uId=(UINT_PTR)b->button;tip.lpszText=(LPWSTR)L"复制译文";SendMessageW(b->tooltip,TTM_ADDTOOLW,0,(LPARAM)&tip);SendMessageW(b->tooltip,TTM_SETMAXTIPWIDTH,0,b->px(360));set_status(*b,L"输入或粘贴文本后自动翻译");
-        for(HWND control:{b->input,b->output,b->button,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)b->font,TRUE);
+        for(HWND control:{b->input,b->output,b->button,b->direction,b->clear})SendMessageW(control,WM_SETFONT,(WPARAM)b->font,TRUE);
         b->panels={Box::Panel{b->input},Box::Panel{b->output}};
-        SendMessageW(b->input,EM_SETLIMITTEXT,8000,0);SendMessageW(b->output,EM_SETLIMITTEXT,128000,0);SetWindowSubclass(b->input,input_proc,1,(DWORD_PTR)b);SetWindowSubclass(b->output,input_proc,1,(DWORD_PTR)b);layout(*b);b->reload();return 0;
+        SendMessageW(b->input,EM_SETLIMITTEXT,8000,0);SendMessageW(b->output,EM_SETLIMITTEXT,128000,0);SetWindowSubclass(b->input,input_proc,1,(DWORD_PTR)b);SetWindowSubclass(b->output,input_proc,1,(DWORD_PTR)b);layout(*b);b->reload();extend_frame(*b);SetWindowPos(h,nullptr,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED);return 0;
     }
     if(m==WM_SIZE){layout(*b);bool visible=w!=SIZE_MINIMIZED&&IsWindowVisible(h);b->background.visible(visible);KillTimer(h,1);if(visible&&b->background.animated())SetTimer(h,1,67,nullptr);return 0;}
     if(m==WM_SHOWWINDOW){b->background.visible(w!=0);if(w&&b->background.animated())SetTimer(h,1,67,nullptr);else KillTimer(h,1);}
@@ -147,7 +187,7 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
     if(m==WM_PAINT||m==WM_PRINTCLIENT){PAINTSTRUCT p{};auto dc=m==WM_PAINT?BeginPaint(h,&p):(HDC)w;prepare_surface(*b);if(b->surface)BitBlt(dc,0,0,b->width,b->height,b->surface,0,0,SRCCOPY);if(m==WM_PAINT)EndPaint(h,&p);return 0;}
     if(m==WM_ERASEBKGND)return 1;
     if(m==WM_DRAWITEM){
-        auto* item=(DRAWITEMSTRUCT*)l;if(item->CtlID!=203&&item->CtlID!=204)return FALSE;prepare_surface(*b);
+        auto* item=(DRAWITEMSTRUCT*)l;if(item->CtlID!=203&&item->CtlID!=204&&item->CtlID!=206)return FALSE;prepare_surface(*b);
         auto area=panel_rect(*b,item->hwndItem);auto bounds=item->rcItem;BitBlt(item->hDC,0,0,bounds.right,bounds.bottom,b->surface,area.left,area.top,SRCCOPY);
         paint_glass(item->hDC,bounds,(item->itemState&ODS_SELECTED)?32:18,b->px(6));
         auto pen=CreatePen(PS_SOLID,1,RGB(211,224,230));auto old_pen=SelectObject(item->hDC,pen),old_brush=SelectObject(item->hDC,GetStockObject(HOLLOW_BRUSH));RoundRect(item->hDC,0,0,bounds.right,bounds.bottom,b->px(6),b->px(6));SelectObject(item->hDC,old_brush);SelectObject(item->hDC,old_pen);DeleteObject(pen);
@@ -155,9 +195,9 @@ LRESULT CALLBACK box_proc(HWND h,UINT m,WPARAM w,LPARAM l){
         if((item->itemState&ODS_FOCUS)&&!(item->itemState&ODS_NOFOCUSRECT)){InflateRect(&bounds,-b->px(4),-b->px(4));DrawFocusRect(item->hDC,&bounds);}SelectObject(item->hDC,old_font);return TRUE;
     }
     if(m==WM_CTLCOLORSTATIC||m==WM_CTLCOLOREDIT){prepare_surface(*b);auto dc=(HDC)w;SetTextColor(dc,RGB(65,94,110));SetBkMode(dc,TRANSPARENT);POINT origin{};LPtoDP(dc,&origin,1);SetBrushOrgEx(dc,origin.x,origin.y,nullptr);for(auto& p:b->panels)if(p.control==(HWND)l&&p.brush)return (LRESULT)p.brush;return (LRESULT)b->paper;}
-    if(m==WM_DPICHANGED){b->dpi=HIWORD(w);auto font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");for(HWND control:{b->input,b->output,b->button,b->direction})SendMessageW(control,WM_SETFONT,(WPARAM)font,TRUE);DeleteObject(b->font);b->font=font;auto*r=(RECT*)l;SetWindowPos(h,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);layout(*b);return 0;}
-    if(m==WM_GETMINMAXINFO){((MINMAXINFO*)l)->ptMinTrackSize={b->px(520),b->px(400)};return 0;}
-    if(m==WM_COMMAND){auto id=LOWORD(w);if(id==201&&HIWORD(w)==EN_CHANGE)schedule(*b);else if(id==204&&HIWORD(w)==BN_CLICKED)direction_menu(*b);else if(id==203&&HIWORD(w)==BN_CLICKED)copy_result(*b);else if(id>=211&&id<=213)set_direction(*b,id-211);return 0;}
+    if(m==WM_DPICHANGED){b->dpi=HIWORD(w);auto font=CreateFontW(-b->px(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Microsoft YaHei UI");for(HWND control:{b->input,b->output,b->button,b->direction,b->clear})SendMessageW(control,WM_SETFONT,(WPARAM)font,TRUE);DeleteObject(b->font);b->font=font;auto*r=(RECT*)l;SetWindowPos(h,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);extend_frame(*b);layout(*b);return 0;}
+    if(m==WM_GETMINMAXINFO){((MINMAXINFO*)l)->ptMinTrackSize={b->px(600),b->px(400)};return 0;}
+    if(m==WM_COMMAND){auto id=LOWORD(w);if(id==201&&HIWORD(w)==EN_CHANGE)schedule(*b);else if(id==204&&HIWORD(w)==BN_CLICKED)direction_menu(*b);else if(id==203&&HIWORD(w)==BN_CLICKED)copy_result(*b);else if(id==206&&HIWORD(w)==BN_CLICKED)clear_text(*b);else if(id>=211&&id<=213)set_direction(*b,id-211);return 0;}
     if(m==translated_message){
         if(!b->busy||w!=b->ticket)return 0;
         if(b->worker.joinable())b->worker.join();
